@@ -7,6 +7,11 @@ test('CocosInvokeGraphBasic', () => {
     project.resolveSourceFileDependencies()
     const graph = new CocosInvokeGraph(cocosDir, project)
     graph.parse()
-    const invokes = graph.findPropertyInvoke("Helloworld", "label")
-    expect(invokes).toBeDefined()
+    const labelInvokes = graph.findPropertyInvoke("Helloworld", "label")
+    expect(labelInvokes).toBeDefined()
+    const textInvokes = graph.findPropertyInvoke("Helloworld", "text")
+    expect(textInvokes).toBeDefined()
+
+    const methodInvokes = graph.findMethodInvoke("Helloworld", "onClick")
+    expect(methodInvokes).toBeDefined()
 })

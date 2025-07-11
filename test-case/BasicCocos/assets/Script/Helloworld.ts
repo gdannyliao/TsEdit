@@ -13,4 +13,8 @@ export default class Helloworld extends cc.Component {
         // init logic
         this.label.string = this.text;
     }
+
+    onClick () {
+        cc.log('click');
+    }
 }
