@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'fs';
 import { UuidUtils } from './UuidUtil';
-import { Project } from 'ts-morph/dist/ts-morph';
+import { ClassDeclaration, MethodDeclaration, Project } from 'ts-morph';
 function isRecord(obj: unknown): obj is Record<string, any> {
     // 函数实现
     return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
@@ -39,73 +39,98 @@ export class CocosInvokeGraph {
         this.shortId2file = new Map<string, string>()
     }
 
+    private getDefaultExportClass(file: string): ClassDeclaration | undefined {
+        const sourceFile = this.morphProject.getSourceFile(file)
+        if (sourceFile === undefined) {
+            return undefined
+        }
+        for (const c of sourceFile.getClasses()) {
+            if (c.isDefaultExport()) {
+                return c
+            }
+        }
+        return undefined
+    }
+
+    private getMethod(classDecl: ClassDeclaration, methodName: string): MethodDeclaration | undefined {
+        const methods = classDecl.getMethods()
+        for (let i = 0; i < methods.length; i++) {
+            const method = methods[i];
+            if (method.getName() === methodName) {
+                return method
+            }
+        }
+        return undefined
+    }
+
+    private cacheClassInvoke(className: string, memberName: string, MemberType: typeof ClassMember, invokeFile: string, invokeJson: Record<string, any>, invokeFileContent: Record<string, any>[]) {
+        const shortId = this.class2ShortId.get(className)
+        const key = `${shortId}.${memberName}`
+        let map: Map<string, ClassMember>
+        if (MemberType === Method) {
+            map = this.methods
+        } else {
+            map = this.properties
+        }
+
+        let member: ClassMember
+        if (map.has(key)) {
+            member = map.get(key)!
+        } else {
+            member = new MemberType()
+            map.set(key, member)
+            member.name = memberName
+            member.class = className
+        }
+        const invoke = new Invoke()
+        invoke.file = invokeFile
+        invoke.invoke = invokeJson
+        invoke.content = invokeFileContent
+        member.invokes.push(invoke)
+    }
+
+    private getDefaultExportClassByShortId(shortId: string): ClassDeclaration | undefined {
+        const file = this.shortId2file.get(shortId)
+        if (file === undefined) {
+            return undefined
+        }
+        const classDecl = this.getDefaultExportClass(file)
+        if (classDecl === undefined) {
+            return undefined
+        }
+        this.class2ShortId.set(classDecl.getName()!, shortId)
+        return classDecl
+    }
+
     private handleJson(json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
         if ("_componentId" in json && "handler" in json) {
             const shortId = json._componentId
-            const file: string | undefined = this.shortId2file.get(shortId)
-            if (file === undefined) {
+            const classDecl = this.getDefaultExportClassByShortId(shortId)
+            if (classDecl === undefined) {
                 return
             }
-            this.morphProject.getSourceFile(file)?.getClasses().forEach(classDecl => {
-                this.class2ShortId.set(classDecl.getName(), shortId)
-                const methods = classDecl.getMethods()
-                for (let i = 0; i < methods.length; i++) {
-                    const method = methods[i];
-                    const methodName = method.getName()
-                    if (methodName !== json.handler) {
-                        continue
-                    }
-                    const key = `${shortId}.${json.handler}`
-                    let methodStruct: Method
-                    if (this.methods.has(key)) {
-                        methodStruct = this.methods.get(key)!
-                    } else {
-                        methodStruct = new Method()
-                        this.methods.set(key, methodStruct)
-                        methodStruct.name = json.handler
-                        methodStruct.class = classDecl.getName()
-                    }
-                    const invoke = new Invoke()
-                    invoke.file = file
-                    invoke.invoke = json
-                    invoke.content = fileContent
-                    methodStruct.invokes.push(invoke)
-                    break
-                }
-            })
-
+            const method = this.getMethod(classDecl, json.handler)
+            if (method === undefined) {
+                return
+            }
+            this.cacheClassInvoke(classDecl.getName()!, json.handler, Method, file, json, fileContent)
         } else if ("__type__" in json && !json.__type__.startsWith("cc.")) {
             const shortId = json.__type__
-            const file: string | undefined = this.shortId2file.get(shortId)
-            if (file === undefined) {
+            const classDecl = this.getDefaultExportClassByShortId(shortId)
+            if (classDecl === undefined) {
                 return
             }
-            this.morphProject.getSourceFile(file)?.getClasses().forEach(classDecl => {
-                this.class2ShortId.set(classDecl.getName(), shortId)
-                const properties = classDecl.getProperties()
-                for (let i = 0; i < properties.length; i++) {
-                    const property = properties[i];
-                    const propertyName = property.getName()
-                    if (!(propertyName in json)) {
-                        continue
-                    }
-                    const propertyId = `${shortId}.${propertyName}`
-                    let propertyStruct: Property
-                    if (this.properties.has(propertyId)) {
-                        propertyStruct = this.properties.get(propertyId)!
-                    } else {
-                        propertyStruct = new Property()
-                        propertyStruct.class = classDecl.getName()
-                        propertyStruct.name = property.getName()
-                        this.properties.set(propertyId, propertyStruct)
-                    }
-                    const invoke = new Invoke()
-                    invoke.file = file
-                    invoke.invoke = json
-                    invoke.content = fileContent
-                    propertyStruct.invokes.push(invoke)
+            const properties = classDecl.getProperties()
+            for (let i = 0; i < properties.length; i++) {
+                const property = properties[i];
+                const propertyName = property.getName()
+                if (!(propertyName in json)) {
+                    continue
                 }
-            })
+                this.cacheClassInvoke(classDecl.getName()!, propertyName, Property, file, json, fileContent)
+            }
+        } else {
+            return
         }
 
 

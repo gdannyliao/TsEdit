@@ -14,4 +14,5 @@ test('CocosInvokeGraphBasic', () => {
 
     const methodInvokes = graph.findMethodInvoke("Helloworld", "onClick")
     expect(methodInvokes).toBeDefined()
+    expect(methodInvokes![0].file.includes('HelloWorld.ts'))
 })
