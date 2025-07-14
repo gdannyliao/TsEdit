@@ -4,6 +4,8 @@ import { TsRename } from "./TsRename";
 import { RandStr } from "./RandStr";
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { CocosInvokeGraph } from "./CocosInvokeGraph";
+import { existsSync, readFileSync } from "fs";
 
 const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
   .option('project', {
@@ -27,7 +29,7 @@ enum CodeType {
   Class,
   Property,
   Method,
-} 
+}
 
 class CodeName {
   constructor(
@@ -37,9 +39,29 @@ class CodeName {
   }
 }
 
+function isCocosProject(projectDir:string): boolean {
+  const projectJsonFile = path.join(projectDir, "project.json")
+  if (!existsSync(projectJsonFile)) {
+    return false
+  }
 
-const project = new Project({tsConfigFilePath: path.join(args['project'], "tsconfig.json")});
+  const projectJson = JSON.parse(readFileSync(projectJsonFile, "utf-8"))
+  if ('engine' in projectJson && projectJson['engine'].includes('cocos')) {
+    return true
+  }
+  return true
+}
+
+if (!isCocosProject(args['project'])) {
+  console.error("不是cocos项目")
+  process.exit(1)
+}
+
+const project = new Project({ tsConfigFilePath: path.join(args['project'], "tsconfig.json") });
 project.resolveSourceFileDependencies();
+
+const cocosGraph = new CocosInvokeGraph(args['project'], project)
+cocosGraph.parse()
 
 const nameMap = new Map<string, Map<string, CodeName>>()
 if (args['random']) {
@@ -83,6 +105,7 @@ nameMap.forEach((classMap, className) => {
   classMap.forEach((code, oldName) => {
     switch (code.type) {
       case CodeType.Class:
+        cocosGraph.setClassName(className, code.name)
         renamer.setClassName(className, code.name)
         className = code.name
         break;

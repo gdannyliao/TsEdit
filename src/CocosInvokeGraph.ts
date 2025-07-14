@@ -34,6 +34,59 @@ export class CocosInvokeGraph {
     private class2ShortId = new Map<string, string>()
     private methods = new Map<string, Method>()
     private properties = new Map<string, Property>()
+    private classMembers = new Map<string, Map<string, ClassMember>>()
+    setClassName(className: string, newName: string) {
+        const classMember = this.classMembers.get(className)
+        if (classMember === undefined) {
+            return
+        }
+        const classMemberSet = new Set(classMember.values())
+        this.classMembers.delete(className)
+        classMemberSet.forEach((member) => {
+            console.log(`handle ${member.class}.${member.name}`)
+            member.class = newName
+            //拖拽引用不使用类名，所以要修改的地方不多
+            const id = `${className}.${member.name}`
+            if (member instanceof Method) {
+                const method = this.methods.get(id)!
+                this.methods.delete(id)
+                this.methods.set(`${newName}.${member.name}`, method)
+            } else {
+                const property = this.properties.get(id)!
+                this.properties.delete(id)
+                this.properties.set(`${newName}.${member.name}`, property)
+            }
+        })
+        this.classMembers.set(newName, classMember)
+    }
+
+    setMethodName(className:string, methodName:string, newName:string) {
+        const key = `${className}.${methodName}`
+        const method = this.methods.get(key)
+        if (method === undefined) {
+            return
+        }
+
+        method.name = newName
+        method.invokes.forEach((invoke) => {
+            invoke.invoke["handler"] = newName
+        })
+    }
+
+    setPropertyName(className:string, propertyName:string, newName:string) {
+        const key = `${className}.${propertyName}`
+        const property = this.properties.get(key)
+        if (property === undefined) {
+            return
+        }
+        property.invokes.forEach((invoke) => {
+            const value = invoke.invoke[property.name]
+            delete invoke.invoke[property.name]
+            invoke.invoke[newName] = value
+        })
+        property.name = newName
+    }
+
 
     constructor(private cocosDir: string, private morphProject: Project) {
         this.shortId2file = new Map<string, string>()
@@ -64,8 +117,7 @@ export class CocosInvokeGraph {
     }
 
     private cacheClassInvoke(className: string, memberName: string, MemberType: typeof ClassMember, invokeFile: string, invokeJson: Record<string, any>, invokeFileContent: Record<string, any>[]) {
-        const shortId = this.class2ShortId.get(className)
-        const key = `${shortId}.${memberName}`
+        const key = `${className}.${memberName}`
         let map: Map<string, ClassMember>
         if (MemberType === Method) {
             map = this.methods
@@ -81,6 +133,14 @@ export class CocosInvokeGraph {
             map.set(key, member)
             member.name = memberName
             member.class = className
+        }
+        if (this.classMembers.has(className)) {
+            const classMember = this.classMembers.get(className)!
+            classMember.set(memberName, member)
+        } else {
+            const classMember = new Map<string, ClassMember>()
+            classMember.set(memberName, member)
+            this.classMembers.set(className, classMember)
         }
         const invoke = new Invoke()
         invoke.file = invokeFile
@@ -103,7 +163,7 @@ export class CocosInvokeGraph {
     }
 
     private handleJson(json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
-        if ("_componentId" in json && "handler" in json) {
+        if ("_componentId" in json && "handler" in json) { //处理方法引用
             const shortId = json._componentId
             const classDecl = this.getDefaultExportClassByShortId(shortId)
             if (classDecl === undefined) {
@@ -114,7 +174,7 @@ export class CocosInvokeGraph {
                 return
             }
             this.cacheClassInvoke(classDecl.getName()!, json.handler, Method, file, json, fileContent)
-        } else if ("__type__" in json && !json.__type__.startsWith("cc.")) {
+        } else if ("__type__" in json && !json.__type__.startsWith("cc.")) { //处理变量引用
             const shortId = json.__type__
             const classDecl = this.getDefaultExportClassByShortId(shortId)
             if (classDecl === undefined) {
@@ -167,20 +227,12 @@ export class CocosInvokeGraph {
     }
 
     public findPropertyInvoke(className: string, propertyName: string): Invoke[] | undefined {
-        const shortId = this.class2ShortId.get(className)
-        if (shortId === undefined) {
-            return undefined
-        }
-        const propertyId = `${shortId}.${propertyName}`
+        const propertyId = `${className}.${propertyName}`
         return this.properties.get(propertyId)?.invokes
     }
 
     public findMethodInvoke(className: string, methodName: string): Invoke[] | undefined {
-        const shortId = this.class2ShortId.get(className)
-        if (shortId === undefined) {
-            return undefined
-        }
-        const methodId = `${shortId}.${methodName}`
+        const methodId = `${className}.${methodName}`
         return this.methods.get(methodId)?.invokes
     }
 
