@@ -6,6 +6,7 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { CocosInvokeGraph } from "./CocosInvokeGraph";
 import { existsSync, readFileSync } from "fs";
+import { TsRenameBuilder } from "./TsRenameBuilder";
 
 const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
   .option('project', {
@@ -57,11 +58,10 @@ if (!isCocosProject(args['project'])) {
   process.exit(1)
 }
 
+const renamer = new TsRenameBuilder().setProjectDir(args['project']).setInvokeGraph(CocosInvokeGraph).build()
+
 const project = new Project({ tsConfigFilePath: path.join(args['project'], "tsconfig.json") });
 project.resolveSourceFileDependencies();
-
-const cocosGraph = new CocosInvokeGraph(args['project'], project)
-cocosGraph.parse()
 
 const nameMap = new Map<string, Map<string, CodeName>>()
 if (args['random']) {
@@ -99,13 +99,10 @@ if (args['random']) {
 
 }
 
-const renamer = new TsRename(project)
-
 nameMap.forEach((classMap, className) => {
   classMap.forEach((code, oldName) => {
     switch (code.type) {
       case CodeType.Class:
-        cocosGraph.setClassName(className, code.name)
         renamer.setClassName(className, code.name)
         className = code.name
         break;

@@ -1,10 +1,13 @@
 import { Project, SourceFile, SyntaxKind } from "ts-morph";
-import path from "path";
+import * as path from "path";
+import { ClassMember, InvokeGraph } from "./InvokeGraph";
 
 export class TsRename {
+    
     private project: Project;
     constructor(
-        project: string | Project
+        project: string | Project,
+        private invokeGraph: InvokeGraph,
     ) {
         if (typeof project === 'string') {
             // 初始化工程
@@ -37,6 +40,7 @@ export class TsRename {
             })
             classDecl.rename(newName)
         })
+        this.invokeGraph.setClassName(className, newName)
         return this;
     }
 
@@ -61,6 +65,7 @@ export class TsRename {
             })
             method.rename(newName)
         })
+        this.invokeGraph.setMethodName(className, methodName, newName)
         return this
     }
 
@@ -84,14 +89,26 @@ export class TsRename {
             })
             property.rename(newName)
         })
+        this.invokeGraph.setPropertyName(className, propertyName, newName)
         return this
     }
 
+    getClass(className: string): Map<string, ClassMember> | undefined {
+        return this.invokeGraph.findClass(className)
+    }
 
+    getMethod(className: string, methodName: string): ClassMember | undefined {
+        return this.invokeGraph.findMethod(className, methodName)
+    }
+
+    getProperty(className: string, propertyName: string): ClassMember | undefined {
+        return this.invokeGraph.findProperty(className, propertyName)
+    }
     save(): TsRename {
         this.changedFiles.forEach(file => {
             file.saveSync()
         })
+        this.invokeGraph.save()
         return this
     }
 }

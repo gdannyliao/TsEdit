@@ -1,35 +1,13 @@
 import { readdirSync, readFileSync } from 'fs';
 import { UuidUtils } from './UuidUtil';
 import { ClassDeclaration, MethodDeclaration, Project } from 'ts-morph';
+import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph';
 function isRecord(obj: unknown): obj is Record<string, any> {
     // 函数实现
     return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
 }
 
-class Invoke {
-    /**
-     * 引用所在的文件
-     */
-    public file: string
-    /**
-     * 引用点的json
-     */
-    public invoke: Record<string, any> = {}
-    /**
-     * 引用所在的文件的文件内容，方便修改后整体保存
-     */
-    public content: Record<string, any>[] = []
-}
-class ClassMember {
-    public class: string
-    public name: string
-    public invokes: Invoke[] = []
-}
-
-class Method extends ClassMember { }
-class Property extends ClassMember { }
-
-export class CocosInvokeGraph {
+export class CocosInvokeGraph implements InvokeGraph {
     private shortId2file = new Map<string, string>()
     private class2ShortId = new Map<string, string>()
     private methods = new Map<string, Method>()
@@ -60,31 +38,39 @@ export class CocosInvokeGraph {
         this.classMembers.set(newName, classMember)
     }
 
-    setMethodName(className:string, methodName:string, newName:string) {
+    setMethodName(className: string, methodName: string, newName: string) {
         const key = `${className}.${methodName}`
-        const method = this.methods.get(key)
+        const method: Method | undefined = this.methods.get(key)
         if (method === undefined) {
             return
         }
 
         method.name = newName
         method.invokes.forEach((invoke) => {
-            invoke.invoke["handler"] = newName
+            invoke.changeInvokePointMethod(methodName, newName)
         })
+        this.methods.delete(key)
+        this.methods.set(`${className}.${newName}`, method)
+        const members = this.classMembers.get(className)!
+        members.delete(methodName)
+        members.set(newName, method)
     }
 
-    setPropertyName(className:string, propertyName:string, newName:string) {
+    setPropertyName(className: string, propertyName: string, newName: string) {
         const key = `${className}.${propertyName}`
         const property = this.properties.get(key)
         if (property === undefined) {
             return
         }
         property.invokes.forEach((invoke) => {
-            const value = invoke.invoke[property.name]
-            delete invoke.invoke[property.name]
-            invoke.invoke[newName] = value
+            invoke.changeInvokePointProperty(property.name, newName)
         })
         property.name = newName
+        this.properties.delete(key)
+        this.properties.set(`${className}.${newName}`, property)
+        const members = this.classMembers.get(className)!
+        members.delete(propertyName)
+        members.set(newName, property)
     }
 
 
@@ -142,11 +128,7 @@ export class CocosInvokeGraph {
             classMember.set(memberName, member)
             this.classMembers.set(className, classMember)
         }
-        const invoke = new Invoke()
-        invoke.file = invokeFile
-        invoke.invoke = invokeJson
-        invoke.content = invokeFileContent
-        member.invokes.push(invoke)
+        member.invokes.push(new Invoke(invokeFile, invokeFileContent, invokeJson))
     }
 
     private getDefaultExportClassByShortId(shortId: string): ClassDeclaration | undefined {
@@ -236,4 +218,25 @@ export class CocosInvokeGraph {
         return this.methods.get(methodId)?.invokes
     }
 
+    findClass(className: string): Map<string, ClassMember> | undefined {
+        return this.classMembers.get(className)
+    }
+
+    findMethod(className: string, methodName: string) {
+        return this.classMembers.get(className)?.get(methodName)
+    }
+
+    findProperty(className: string, propertyName: string): ClassMember | undefined {
+        return this.classMembers.get(className)?.get(propertyName)
+    }
+
+    save(): void {
+        this.classMembers.forEach((classMember, className) => {
+            classMember.forEach((member, memberName) => {
+                member.invokes.forEach(invoke => {
+                    invoke.save()
+                })
+            })
+        })
+    }
 }
