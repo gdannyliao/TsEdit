@@ -7,14 +7,14 @@ var Reg_Dash = /-/g,
     Reg_CompressedUuid = /^[0-9a-zA-Z+/]{22,23}$/,
     UuidUtils = {
         NonUuidMark: ".",
-        compressUuid: function (i, e) {
+        compressUuid: function (i:string, e:boolean) {
             if (Reg_Uuid.test(i)) i = i.replace(Reg_Dash, "");
             else if (!Reg_NormalizedUuid.test(i)) return i;
             var s = !0 === e ? 2 : 5;
             return UuidUtils.compressHex(i, s)
         },
-        compressHex: function (i, e) {
-            var s, r = i.length;
+        compressHex: function (i:string, e: number) {
+            var s: number, r = i.length;
             s = void 0 !== e ? e : r % 3;
             for (var t = i.slice(0, s), o:string[] = []; s < r;) {
                 var u = parseInt(i[s], 16),
@@ -24,7 +24,7 @@ var Reg_Dash = /-/g,
             }
             return t + o.join("")
         },
-        decompressUuid: function (i) {
+        decompressUuid: function (i: string) {
             if (23 === i.length) {
                 for (var e:string[] = [], s = 5; s < 23; s += 2) {
                     var r = AsciiTo64[i.charCodeAt(s)],
@@ -41,7 +41,7 @@ var Reg_Dash = /-/g,
             }
             return [i.slice(0, 8), i.slice(8, 12), i.slice(12, 16), i.slice(16, 20), i.slice(20)].join("-")
         },
-        isUuid: function (i) {
+        isUuid: function (i:string) {
             return Reg_CompressedUuid.test(i) || Reg_NormalizedUuid.test(i) || Reg_Uuid.test(i)
         },
         uuid: function () {

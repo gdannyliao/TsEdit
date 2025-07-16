@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync } from 'fs';
-import { UuidUtils } from './UuidUtil';
+import { readdirSync, readFileSync } from 'node:fs';
+import { UuidUtils } from './UuidUtil.ts';
 import { ClassDeclaration, MethodDeclaration, Project } from 'ts-morph';
-import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph';
+import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph.ts';
 function isRecord(obj: unknown): obj is Record<string, any> {
     // 函数实现
     return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
@@ -21,18 +21,18 @@ export class CocosInvokeGraph implements InvokeGraph {
         const classMemberSet = new Set(classMember.values())
         this.classMembers.delete(className)
         classMemberSet.forEach((member) => {
-            console.log(`handle ${member.class}.${member.name}`)
-            member.class = newName
+            console.log(`handle ${member.getClassName()}.${member.getMemberName()}`)
+            member.setClassName(newName)
             //拖拽引用不使用类名，所以要修改的地方不多
-            const id = `${className}.${member.name}`
+            const id = `${className}.${member.getMemberName()}`
             if (member instanceof Method) {
                 const method = this.methods.get(id)!
                 this.methods.delete(id)
-                this.methods.set(`${newName}.${member.name}`, method)
+                this.methods.set(`${newName}.${member.getMemberName()}`, method)
             } else {
                 const property = this.properties.get(id)!
                 this.properties.delete(id)
-                this.properties.set(`${newName}.${member.name}`, property)
+                this.properties.set(`${newName}.${member.getMemberName()}`, property)
             }
         })
         this.classMembers.set(newName, classMember)
@@ -45,8 +45,8 @@ export class CocosInvokeGraph implements InvokeGraph {
             return
         }
 
-        method.name = newName
-        method.invokes.forEach((invoke) => {
+        method.setMemberName(newName)
+        method.getInvokes().forEach((invoke) => {
             invoke.changeInvokePointMethod(methodName, newName)
         })
         this.methods.delete(key)
@@ -62,10 +62,10 @@ export class CocosInvokeGraph implements InvokeGraph {
         if (property === undefined) {
             return
         }
-        property.invokes.forEach((invoke) => {
-            invoke.changeInvokePointProperty(property.name, newName)
+        property.getInvokes().forEach((invoke) => {
+            invoke.changeInvokePointProperty(property.getMemberName(), newName)
         })
-        property.name = newName
+        property.setMemberName(newName)
         this.properties.delete(key)
         this.properties.set(`${className}.${newName}`, property)
         const members = this.classMembers.get(className)!
@@ -115,10 +115,8 @@ export class CocosInvokeGraph implements InvokeGraph {
         if (map.has(key)) {
             member = map.get(key)!
         } else {
-            member = new MemberType()
+            member = new MemberType(className, memberName)
             map.set(key, member)
-            member.name = memberName
-            member.class = className
         }
         if (this.classMembers.has(className)) {
             const classMember = this.classMembers.get(className)!
@@ -128,7 +126,7 @@ export class CocosInvokeGraph implements InvokeGraph {
             classMember.set(memberName, member)
             this.classMembers.set(className, classMember)
         }
-        member.invokes.push(new Invoke(invokeFile, invokeFileContent, invokeJson))
+        member.addInvoke(new Invoke(invokeFile, invokeFileContent, invokeJson))
     }
 
     private getDefaultExportClassByShortId(shortId: string): ClassDeclaration | undefined {
@@ -185,9 +183,9 @@ export class CocosInvokeGraph implements InvokeGraph {
 
     public parse() {
         const assetsDir = `${this.cocosDir}/assets`
-        const files = readdirSync(assetsDir, { recursive: true })
+        const files = readdirSync(assetsDir, { recursive: true }) as string[]
         const jsonFiles: string[] = []
-        files.forEach(file => {
+        files.forEach((file: string) => {
             //先获取所有文件的.meta，方便后续根据UUID识别文件
             const filePath = `${assetsDir}/${file}`
             if (file.endsWith(".fire") || file.endsWith(".prefab")) {
@@ -210,12 +208,12 @@ export class CocosInvokeGraph implements InvokeGraph {
 
     public findPropertyInvoke(className: string, propertyName: string): Invoke[] | undefined {
         const propertyId = `${className}.${propertyName}`
-        return this.properties.get(propertyId)?.invokes
+        return this.properties.get(propertyId)?.getInvokes()
     }
 
     public findMethodInvoke(className: string, methodName: string): Invoke[] | undefined {
         const methodId = `${className}.${methodName}`
-        return this.methods.get(methodId)?.invokes
+        return this.methods.get(methodId)?.getInvokes()
     }
 
     findClass(className: string): Map<string, ClassMember> | undefined {
@@ -233,7 +231,7 @@ export class CocosInvokeGraph implements InvokeGraph {
     save(): void {
         this.classMembers.forEach((classMember, className) => {
             classMember.forEach((member, memberName) => {
-                member.invokes.forEach(invoke => {
+                member.getInvokes().forEach(invoke => {
                     invoke.save()
                 })
             })

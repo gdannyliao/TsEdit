@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "bundler",
+    "module": "es2015",
+    "target":"es2015",
+    "noEmit": true,
+    // "outDir": "./dist", // 编译后的 JS 文件输出到 dist 目录
+    // "rootDir": "./src" // 源代码目录
+  },
+  "include": ["src/**/*"]
+}

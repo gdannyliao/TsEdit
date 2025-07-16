@@ -1,6 +1,6 @@
 import { Project, SourceFile, SyntaxKind } from "ts-morph";
-import * as path from "path";
-import { ClassMember, InvokeGraph } from "./InvokeGraph";
+import * as path from "node:path";
+import { ClassMember, InvokeGraph } from "./InvokeGraph.ts";
 
 export class TsRename {
     

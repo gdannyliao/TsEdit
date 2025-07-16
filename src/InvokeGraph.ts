@@ -1,4 +1,4 @@
-import { writeFileSync } from "fs"
+import { writeFileSync } from "node:fs"
 
 export interface InvokeGraph {
     setClassName(className: string, newName: string): void
@@ -17,9 +17,29 @@ export interface InvokeGraph {
 }
 
 export class ClassMember {
-    public class: string
-    public name: string
-    public invokes: Invoke[] = []
+    constructor(private className: string, private memberName: string) { }
+    getClassName(): string {
+        return this.className
+    }
+    setClassName(newName: string) {
+        this.className = newName
+    }
+    getMemberName(): string {
+        return this.memberName
+    }
+
+    setMemberName(newName: string) {
+        this.memberName = newName
+    }
+
+    addInvoke(invoke:Invoke) {
+        this.invokes.push(invoke)
+    }
+
+    getInvokes(): Invoke[] {
+        return this.invokes
+    }
+    private invokes: Invoke[] = []
 }
 
 export class Method extends ClassMember { }

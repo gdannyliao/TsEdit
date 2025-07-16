@@ -1,12 +1,12 @@
-import { Project, SyntaxKind } from "ts-morph";
-import path from "path";
-import { TsRename } from "./TsRename";
-import { RandStr } from "./RandStr";
+import { Project } from "ts-morph";
+import path from "node:path";
+import { RandStr } from "./RandStr.ts";
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { CocosInvokeGraph } from "./CocosInvokeGraph";
-import { existsSync, readFileSync } from "fs";
-import { TsRenameBuilder } from "./TsRenameBuilder";
+import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { TsRenameBuilder } from "./TsRenameBuilder.ts";
+import process from "node:process";
 
 const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
   .option('project', {
@@ -24,7 +24,7 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
     }
     return true
   })
-  .parse()
+  .parseSync()
 
 enum CodeType {
   Class,
@@ -53,12 +53,12 @@ function isCocosProject(projectDir:string): boolean {
   return true
 }
 
-if (!isCocosProject(args['project'])) {
+if (!isCocosProject(args.project)) {
   console.error("不是cocos项目")
   process.exit(1)
 }
 
-const renamer = new TsRenameBuilder().setProjectDir(args['project']).setInvokeGraph(CocosInvokeGraph).build()
+const renamer = new TsRenameBuilder().setProjectDir(args.project).setInvokeGraph(CocosInvokeGraph).build()
 
 const project = new Project({ tsConfigFilePath: path.join(args['project'], "tsconfig.json") });
 project.resolveSourceFileDependencies();
@@ -76,7 +76,6 @@ if (args['random']) {
         return
       }
       const classMap = new Map<string, CodeName>()
-      classMap.set(className, new CodeName(random.getString(6, "C_"), CodeType.Class))
       nameMap.set(className, classMap);
 
       classDecl.getProperties().forEach(property => {
@@ -94,6 +93,7 @@ if (args['random']) {
         }
         classMap.set(methodName, new CodeName(random.getString(6, "m_"), CodeType.Method))
       })
+      classMap.set(className, new CodeName(random.getString(6, "C_"), CodeType.Class))
     })
   })
 
