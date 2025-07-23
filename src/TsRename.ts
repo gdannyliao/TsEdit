@@ -1,10 +1,11 @@
-import { Project, SourceFile, SyntaxKind } from "ts-morph";
+import { Project, SourceFile, MethodDeclaration, PropertyDeclaration, Type } from "ts-morph";
 import * as path from "node:path";
 import { ClassMember, InvokeGraph } from "./InvokeGraph.ts";
 
 export class TsRename {
-    
-    private project: Project;
+
+    private project: Project
+    private sdkClasses = new Map<string, Set<string>>()
     constructor(
         project: string | Project,
         private invokeGraph: InvokeGraph,
@@ -18,6 +19,21 @@ export class TsRename {
             this.project = project
         }
         this.project.resolveSourceFileDependencies();
+        this.project.getSourceFiles().forEach(file => {
+            if (!file.getBaseName().endsWith(".d.ts")) {
+                return
+            }
+            file.getModules().forEach(module => {
+                module.getClasses().forEach(classDecl => {
+                    const clsMember = new Set<string>()
+                    this.sdkClasses.set(`${module.getName()}.${classDecl.getName()}`, clsMember)
+                    classDecl.getMembers().forEach(member => {
+                        if (member instanceof PropertyDeclaration || member instanceof MethodDeclaration)
+                            clsMember.add(member.getName()!)
+                    })
+                })
+            })
+        })
     }
 
     private changedFiles = new Set<SourceFile>()
@@ -44,6 +60,24 @@ export class TsRename {
         return this;
     }
 
+    /**
+     * 检查是否是继承自SDK类的成员，是的话直接应该忽略
+     * @param cls 
+     * @param member 
+     * @returns 
+     */
+    private extendFromSdk(cls: Type, member: string): boolean {
+        if (this.sdkClasses.has(cls.getText())) {
+            const members = this.sdkClasses.get(cls.getText())
+            if (members?.has(member)) {
+                return true
+            }
+        }
+        return cls.getBaseTypes().some(baseType => {
+            return this.extendFromSdk(baseType, member)
+        })
+    }
+
     setMethodName(className: string, methodName: string, newName: string): TsRename {
         this.project.getSourceFiles().forEach(file => {
             if (file.getFilePath().endsWith(".d.ts")) {
@@ -57,8 +91,11 @@ export class TsRename {
             if (!method) {
                 return
             }
-            console.log("rename method", className, methodName, newName)
+            if (this.extendFromSdk(classDecl.getType(), methodName)) {
+                return
+            }
 
+            console.log("rename method", className, methodName, newName)
             this.changedFiles.add(file)
             method.findReferencesAsNodes().forEach((refNode) => {
                 this.changedFiles.add(refNode.getSourceFile())
@@ -80,6 +117,9 @@ export class TsRename {
             }
             const property = classDecl.getProperty(propertyName)
             if (!property) {
+                return
+            }
+            if (this.extendFromSdk(classDecl.getType(), propertyName)) {
                 return
             }
             console.log("rename property", className, propertyName, newName)

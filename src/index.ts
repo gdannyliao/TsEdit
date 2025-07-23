@@ -68,6 +68,7 @@ if (args['random']) {
   const random = new RandStr(args['project'])
   project.getSourceFiles().forEach(file => {
     if (file.getFilePath().endsWith(".d.ts")) {
+      console.warn(`忽略d.ts文件: ${file.getFilePath()}`)
       return
     }
     file.getClasses().forEach(classDecl => {
