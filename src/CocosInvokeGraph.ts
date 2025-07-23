@@ -78,13 +78,13 @@ export class CocosInvokeGraph implements InvokeGraph {
         this.shortId2file = new Map<string, string>()
     }
 
-    private getDefaultExportClass(file: string): ClassDeclaration | undefined {
+    private getExportClass(file: string): ClassDeclaration | undefined {
         const sourceFile = this.morphProject.getSourceFile(file)
         if (sourceFile === undefined) {
             return undefined
         }
         for (const c of sourceFile.getClasses()) {
-            if (c.isDefaultExport()) {
+            if (c.isExported()) {
                 return c
             }
         }
@@ -134,7 +134,7 @@ export class CocosInvokeGraph implements InvokeGraph {
         if (file === undefined) {
             return undefined
         }
-        const classDecl = this.getDefaultExportClass(file)
+        const classDecl = this.getExportClass(file)
         if (classDecl === undefined) {
             return undefined
         }

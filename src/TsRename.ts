@@ -79,20 +79,20 @@ export class TsRename {
     }
 
     setMethodName(className: string, methodName: string, newName: string): TsRename {
-        this.project.getSourceFiles().forEach(file => {
+        this.project.getSourceFiles().some(file => {
             if (file.getFilePath().endsWith(".d.ts")) {
-                return
+                return false
             }
             const classDecl = file.getClass(className)
             if (!classDecl) {
-                return
+                return false
             }
             const method = classDecl.getMethod(methodName)
             if (!method) {
-                return
+                return false
             }
             if (this.extendFromSdk(classDecl.getType(), methodName)) {
-                return
+                return true
             }
 
             console.log("rename method", className, methodName, newName)
@@ -101,26 +101,27 @@ export class TsRename {
                 this.changedFiles.add(refNode.getSourceFile())
             })
             method.rename(newName)
+            this.invokeGraph.setMethodName(className, methodName, newName)
+            return true
         })
-        this.invokeGraph.setMethodName(className, methodName, newName)
         return this
     }
 
     setPropertyName(className: string, propertyName: string, newName: string): TsRename {
-        this.project.getSourceFiles().forEach(file => {
+        this.project.getSourceFiles().some(file => {
             if (file.getFilePath().endsWith(".d.ts")) {
-                return
+                return false
             }
             const classDecl = file.getClass(className)
             if (!classDecl) {
-                return
+                return false
             }
             const property = classDecl.getProperty(propertyName)
             if (!property) {
-                return
+                return false
             }
             if (this.extendFromSdk(classDecl.getType(), propertyName)) {
-                return
+                return true
             }
             console.log("rename property", className, propertyName, newName)
             this.changedFiles.add(file)
@@ -128,8 +129,9 @@ export class TsRename {
                 this.changedFiles.add(refNode.getSourceFile())
             })
             property.rename(newName)
+            this.invokeGraph.setPropertyName(className, propertyName, newName)
+            return true
         })
-        this.invokeGraph.setPropertyName(className, propertyName, newName)
         return this
     }
 
