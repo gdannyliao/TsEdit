@@ -1,5 +1,13 @@
 import { Project } from 'ts-morph';
 import { CocosInvokeGraph } from "../src/CocosInvokeGraph";
+import { runCommand } from './test_tool';
+
+
+const cocosDir = `${process.cwd()}/test-case/BasicCocos`
+afterEach(async () => {
+    await runCommand(`git checkout --quiet ${cocosDir}`)
+})
+
 
 test('CocosInvokeGraphBasic', () => {
     const cocosDir = `${process.cwd()}/test-case/BasicCocos`
@@ -14,7 +22,7 @@ test('CocosInvokeGraphBasic', () => {
 
     const methodInvokes = graph.findMethodInvoke("Helloworld", "onClick")
     expect(methodInvokes).toBeDefined()
-    expect(methodInvokes![0].file.includes('HelloWorld.ts'))
+    expect(methodInvokes![0].getFile().includes('HelloWorld.ts'))
 })
 
 test("CocosInvokeGraphChangeClsName", () => {

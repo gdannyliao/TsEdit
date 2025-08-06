@@ -73,4 +73,8 @@ export class Invoke {
     changed(): boolean {
         return this.invokeChanged
     }
+
+    getFile(): string {
+        return this.file
+    }
 }

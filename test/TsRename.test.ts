@@ -1,9 +1,14 @@
 import { CocosInvokeGraph } from "../src/CocosInvokeGraph"
 import { TsRenameBuilder } from "../src/TsRenameBuilder"
+import { runCommand } from "./test_tool"
+
+const cocosDir = `${process.cwd()}/test-case/BasicCocos`
+
+afterEach(async () => {
+    await runCommand(`git checkout --quiet ${cocosDir}`)
+})
 
 test("TsRename", () => {
-    const cocosDir = `${process.cwd()}/test-case/BasicCocos`
-
     const rename = new TsRenameBuilder().setProjectDir(cocosDir).setInvokeGraph(CocosInvokeGraph).build()
     rename.setClassName("Helloworld", "huawei")
     const clsInfo = rename.getClass("huawei")
