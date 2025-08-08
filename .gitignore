@@ -13,6 +13,8 @@ runtime/
 build/
 jsb/
 export/
+output/
+coverage/
 
 #/////////////////////////////////////////////////////////////////////////////
 # Logs and databases
@@ -79,3 +81,4 @@ build
 npm-debug.log
 .env
 .DS_Store
+tsedit
