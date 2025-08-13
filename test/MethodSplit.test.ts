@@ -1,4 +1,3 @@
-import { runCommand } from './test_tool';
 import {MethodSplit} from "../src/MethodSplit"
 import { Project } from 'ts-morph';
 import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
@@ -44,6 +43,45 @@ test('MethodSplitWithReturn',  () => {
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplit(project, '123')
     methodSplit.split("SplitMethodSample", "withReturn")
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})
+
+test('MethodSplitWithIf',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withIf")
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})
+
+test('MethodSplitWithIfAndConst',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withIfAndConst")
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})
+
+test('MethodSplitWithVar',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withVar")
     methodSplit.saveSync(outputDir)
 
     const outputProject = new Project()

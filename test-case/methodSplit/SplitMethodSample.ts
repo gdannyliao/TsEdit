@@ -1,5 +1,5 @@
 class SplitMethodSample {
-   
+
 
     withParam(text: string) {
         console.log("line1")
@@ -41,11 +41,11 @@ class SplitMethodSample {
     withIf(text: string) {
         console.log("line1")
         console.log("line2")
-        console.log("line3")
-        console.log("line4")
         if (text) {
             console.log("text is not empty")
         }
+        console.log("line3")
+        console.log("line4")
         console.log("line5")
         console.log("line6")
         console.log("line7")
@@ -53,8 +53,8 @@ class SplitMethodSample {
     }
 
     withIfAndConst() {
-        const c1 = "const1"
         console.log("line1")
+        const c1 = "const1"
         console.log("line2")
         console.log("line3")
         console.log("line4")
