@@ -100,11 +100,11 @@ export class MethodSplit {
         return statements.length > 3
     }
 
-    private getSplitRange(statements: (Statement | string)[], start: number = 0): [number, number, Set<Param>, Set<ReturnValue>] {
+    private scanAndSkipVars(statements: (Statement | string)[], vars: Map<string, Param>, start: number = 0, end: number = 0): [number, number,Set<ReturnValue>] {
         const newVars = new Set<Param>()
         const returnValues = new Set<ReturnValue>()
-        const end = this.getRandomInt(start, statements.length)
-        for (let i = start; i < end; i++) {
+        const endIdx = end === 0 ? this.getRandomInt(start, statements.length) : end
+        for (let i = start; i < endIdx; i++) {
             //FIXME 改成两边往中间扫描，减少对不必要行的跳过
             const stmt = statements[i]
             if (stmt instanceof Statement) {
@@ -123,12 +123,20 @@ export class MethodSplit {
             }
             //如果是字符串，说明是插入行，直接跳过
         }
-        return [start, end, newVars, returnValues]
+
+        newVars.forEach(varDecl => {
+            vars.set(varDecl.getName(), varDecl)
+        })
+
+        for (const returnValue of returnValues) {
+            returnValue.setType(vars.get(returnValue.getName())!.getType())
+        }
+        return [start, endIdx, returnValues]
     }
 
-    private insertNewMethod(statements: (Statement | string)[], newVars: Map<string, Param>, returnValues: Set<ReturnValue>): MethodDeclaration | undefined {
+    private insertNewMethod(statements: (Statement | string)[], newVars: Map<string, Param>, returnValues: Set<ReturnValue>): [MethodDeclaration | undefined, boolean ]{
         if (!this.currentCls || !this.currentMethod) {
-            return undefined
+            return [undefined, false]
         }
         const newParams: ParameterDeclarationStructure[] = []
         const params = this.currentMethod.getParameters()
@@ -148,86 +156,90 @@ export class MethodSplit {
             //如果最后一行是return语句，那说明中间的变量修改语句都不需要额外处理，直接填写原return变量的类型即可
             const returnStmt = lastStmt.asKind(SyntaxKind.ReturnStatement)!
             const returnType = returnStmt.getExpression()?.getType()
-            return this.currentCls.addMethod({
+            return [this.currentCls.addMethod({
                 name: `z_${this.randStr.getString(10)}`,
                 parameters: newParams,
                 statements: statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt),
                 returnType: returnType ? toTypeText(returnType) : undefined,
-            })
+            }), true]
         }
 
         if (returnValues.size > 0) {
             const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
             newStatements.push(`return [${Array.from(returnValues).map(v => v.getName()).join(',')}]`)
-            return this.currentCls.addMethod({
+            return [this.currentCls.addMethod({
                 name: `z_${this.randStr.getString(10)}`,
                 parameters: newParams,
                 statements: newStatements,
                 returnType: `[${Array.from(returnValues).map(v => v.getType()).join(',')}]`
-            })
+            }), false]
         }
 
-        return this.currentCls.addMethod({
+        return [this.currentCls.addMethod({
             name: `z_${this.randStr.getString(10)}`,
             parameters: newParams,
             statements: statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
-        })
+        }), false]
     }
 
-    private isLastStatementReturn(statements: (Statement|string)[]) {
+    private isLastStmtReturn(statements: (Statement | string)[]) {
         const lastStmt = statements[statements.length - 1]
         if (lastStmt instanceof Statement && lastStmt.getKind() === SyntaxKind.ReturnStatement) {
             return true
         }
         return false
     }
-    private splitBlock(block: Block) {
+
+    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, isLastStmtReturn: boolean, insertIndex: number, returnValues: Set<ReturnValue>) {
+        const callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
+        //向Block中添加调用新方法的语句
+        if (isLastStmtReturn && !newMethod.getReturnType().isVoid()) {
+            statements.splice(insertIndex, 0, `return ${callNewMethodStmt}`)
+        } else {
+            if (returnValues.size > 0) {
+                const receiveReturnVarStmt = `[${Array.from(returnValues).map(v => v.getName()).join(',')}] = ${callNewMethodStmt}`
+                statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
+            } else {
+                statements.splice(insertIndex, 0, callNewMethodStmt)
+            }
+        }
+    }
+    private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined) {
         const statements: (Statement | string)[] = block.getStatements()
         if (!this.shouldSplit(statements)) {
             return
         }
 
-        let start, end = 0
         const vars = new Map<string, Param>()
-        do {
-            let newVars: Set<Param>
-            let returnValues: Set<ReturnValue>
-            [start, end, newVars, returnValues] = this.getSplitRange(statements, end)
-            newVars.forEach(varDecl => {
-                vars.set(varDecl.getName(), varDecl)
-            })
-
-            for (const returnValue of returnValues) {
-                returnValue.setType(vars.get(returnValue.getName())!.getType())
+        let start, end = 0
+        if (splitRange) {
+            if (splitRange[1] === -1) { //如果end为-1，则视为分割start以后所有的语句
+                splitRange[1] = statements.length
             }
+            [start, end] = splitRange
+            this.scanAndSkipVars(statements, vars, 0, start) //对于指定区间的操作，需要从0开始扫描，以便获得start之前的变量声明
+        }
+        do {
+            let returnValues: Set<ReturnValue>
+            [start, end, returnValues] = this.scanAndSkipVars(statements, vars, start, end)
 
             const extractStatements = statements.splice(start, end - start)
-            const newMethod = this.insertNewMethod(extractStatements, vars, returnValues)
+            const [newMethod, isLastStmtReturn] = this.insertNewMethod(extractStatements, vars, returnValues)
             if (!newMethod) {
                 return
             }
-
             // block.removeStatements([start, end-1])  //这个语句有bug，有些情况删除的不是指定行
-            const callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
-            //向Block中添加调用新方法的语句
-            if (this.isLastStatementReturn(extractStatements) && !newMethod.getReturnType().isVoid()) {
-                statements.splice(start, 0, `return ${callNewMethodStmt}`)
-            } else {
-                if (returnValues.size > 0) {
-                    const receiveReturnVarStmt = `[${Array.from(returnValues).map(v => v.getName()).join(',')}] = ${callNewMethodStmt}`
-                    statements.splice(start, 0, `${receiveReturnVarStmt}`)
-                } else {
-                    statements.splice(start, 0, callNewMethodStmt)
-                }
-            }
-            end = end - (end - start) + 1 //end的新位置是原始end-删除的行数+插入的行数，这里插入行为1
-        } while (end < statements.length)
-        const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)            
+            this.insertCallMethodStatement(statements, newMethod, isLastStmtReturn, start, returnValues)
+            start = end - (end - start) + 1 //start的新位置是原始end-删除的行数+插入的行数，这里插入行为1
+            end = 0
+        } while (start < statements.length && splitRange === undefined)
+
+        const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
         block.removeStatements([0, block.getStatements().length])
         block.addStatements(newStatements)
     }
 
-    split(clsName: string, methodName: string) {
+    split(clsName: string, methodName: string, splitRange: ([number, number] | undefined) = undefined) {
         this.project.getSourceFiles().some(file => {
             if (file.getFilePath().endsWith(".d.ts")) {
                 return false
@@ -257,7 +269,7 @@ export class MethodSplit {
                 //     return map
                 // }, new Map<string, Param>())
 
-                this.splitBlock(body)
+                this.splitBlock(body, splitRange)
             }
 
             this.changedFiles.add(file)

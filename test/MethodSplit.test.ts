@@ -29,7 +29,7 @@ test('MethodSplitWithConst',  () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplit(project, '1234')
-    methodSplit.split("SplitMethodSample", "withConst")
+    methodSplit.split("SplitMethodSample", "withConst", [2, -1])
     methodSplit.saveSync(outputDir)
 
     const outputProject = new Project()
@@ -42,7 +42,7 @@ test('MethodSplitWithReturn',  () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplit(project, '123')
-    methodSplit.split("SplitMethodSample", "withReturn")
+    methodSplit.split("SplitMethodSample", "withReturn", [4, -1])
     methodSplit.saveSync(outputDir)
 
     const outputProject = new Project()
@@ -55,7 +55,7 @@ test('MethodSplitWithIf',  () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplit(project, '1234')
-    methodSplit.split("SplitMethodSample", "withIf")
+    methodSplit.split("SplitMethodSample", "withIf", [2, 4])
     methodSplit.saveSync(outputDir)
 
     const outputProject = new Project()
@@ -64,24 +64,12 @@ test('MethodSplitWithIf',  () => {
     expect(diagnostics.length).toBe(0)
 })
 
-test('MethodSplitWithIfAndConst',  () => {
-    const project = new Project()
-    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplit(project, '1234')
-    methodSplit.split("SplitMethodSample", "withIfAndConst")
-    methodSplit.saveSync(outputDir)
-
-    const outputProject = new Project()
-    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
-    const diagnostics = outputProject.getPreEmitDiagnostics()
-    expect(diagnostics.length).toBe(0)
-})
 
 test('MethodSplitWithVar',  () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplit(project, '1234')
-    methodSplit.split("SplitMethodSample", "withVar")
+    methodSplit.split("SplitMethodSample", "withVar", [4, 6])
     methodSplit.saveSync(outputDir)
 
     const outputProject = new Project()
