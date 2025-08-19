@@ -77,3 +77,42 @@ test('MethodSplitWithVar',  () => {
     const diagnostics = outputProject.getPreEmitDiagnostics()
     expect(diagnostics.length).toBe(0)
 })
+
+test('MethodSplitWithIfReturn',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withIfReturn", [3, 6])
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})
+
+test('MethodSplitwithIfReturnHasValue',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withIfReturnHasValue", [3, 7])
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})
+
+test('withIfReturnAndVarChange',  () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplit(project, '1234')
+    methodSplit.split("SplitMethodSample", "withIfReturnAndVarChange", [4, 7])
+    methodSplit.saveSync(outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+})

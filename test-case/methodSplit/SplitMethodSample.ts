@@ -84,7 +84,31 @@ class SplitMethodSample {
     }
 
     withIfReturn(text: string) {
-        /* if中遇到return，需要外层函数中也保留中断逻辑
+        /* if中遇到return，需要外层函数中也保留中断逻辑。子函数返回true，表示子函数中有中断，否则表示子函数继续执行
+        fun1(text:string):[boolean] {
+            if (text) {
+                console.log("text is not empty")
+                return [true]
+            }
+            console.log("line5")
+            console.log("line6")
+            return [false]
+        }
+        withIfReturn(text: string) {
+            console.log("line1")
+            console.log("line2")
+            console.log("line3")
+            console.log("line4")
+
+            let willBreak__ = false
+            [willBreak__] = fun1(text);
+            if (willBreak__) {
+                return
+            }
+
+            console.log("line7")
+            console.log("line8")
+        }
         */
         console.log("line1")
         console.log("line2")
@@ -98,6 +122,103 @@ class SplitMethodSample {
         console.log("line6")
         console.log("line7")
         console.log("line8")
+    }
+
+    
+    withIfReturnHasValue(text: string): string {
+        /* if中遇到含有值的return，需要将值传递回上层。子函数前添加Boolean值表示子函数是否有中断
+    fun1(text: string): [boolean, string] {
+        if (text) {
+            console.log("text is not empty")
+            return [true, "return1"]
+        }
+        console.log("line5")
+        console.log("line6")
+        return [false, ""]
+    }
+    withIfReturnHasValue(text: string): string {
+
+        console.log("line1")
+        console.log("line2")
+        console.log("line3")
+        console.log("line4")
+
+        let willBreak__ = false, returnValue__ = ""
+        [willBreak__, returnValue__] = fun1(text);
+        if (willBreak__) {
+            return returnValue__
+        }
+
+        console.log("line7")
+        console.log("line8")
+        return "return2"
+    }
+
+        */
+        console.log("line1")
+        console.log("line2")
+        console.log("line3")
+        console.log("line4")
+        if (text) {
+            console.log("text is not empty")
+            return "return1"
+        }
+        console.log("line5")
+        console.log("line6")
+        console.log("line7")
+        console.log("line8")
+        return "return2"
+    }
+
+    withIfReturnAndVarChange(text: string):string {
+                /* if中遇到含有值的return，需要将值传递回上层。子函数前添加Boolean值表示子函数是否有中断
+    fun1(text: string, var1: string): [boolean, int, string] {
+        if (text) {
+            var1 = 2
+            console.log("text is not empty")
+            return [true, var1, "return1"]
+        }
+        console.log("line5")
+        console.log("line6")
+        return [false, var1, ""]
+    }
+    withIfReturnAndVarChange(text: string): string {
+
+        console.log("line1")
+        console.log("line2")
+        let var1 = 1
+
+        console.log("line3")
+        console.log("line4")
+
+        let willBreak__ = false, returnValue__ = ""
+        [willBreak__, var1, returnValue__] = fun1(text);
+        if (willBreak__) {
+            return returnValue__
+        }
+
+        console.log("line7")
+        console.log("var1=" + var1)
+        console.log("line8")
+        return "return2"
+    }
+        */
+        console.log("line1")
+        console.log("line2")
+        let var1 = 1
+        console.log("line3")
+        console.log("line4")
+        if (text) {
+            var1 = 2
+            console.log("text is not empty")
+            return "return1"
+        }
+        console.log("line5")
+        console.log("line6")
+        console.log("line7")
+        console.log("var1=" + var1)
+        console.log("line8")
+        return "return2"
     }
 
     withArrowFun() {
