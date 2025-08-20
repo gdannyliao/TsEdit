@@ -12,9 +12,9 @@ function toTypeText(type: Type | undefined): string {
     return type.getText()
 }
 
-function isAssignmentStatement(statement: Statement): { is: boolean, varName: string | undefined, operator: string | undefined } {
+function isAssignmentStatement(statement: Statement): { yes: boolean, varName: string | undefined, operator: string | undefined } {
     if (statement.getKind() !== SyntaxKind.ExpressionStatement) {
-        return { is: false, varName: undefined, operator: undefined };
+        return { yes: false, varName: undefined, operator: undefined };
     }
 
     const exprStmt = statement.asKind(SyntaxKind.ExpressionStatement)!;
@@ -40,10 +40,10 @@ function isAssignmentStatement(statement: Statement): { is: boolean, varName: st
             SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken // >>>=
         ];
 
-        return { is: assignmentOperators.includes(operatorKind), varName: binaryExpr.getLeft().getText(), operator: binaryExpr.getOperatorToken().getText() };
+        return { yes: assignmentOperators.includes(operatorKind), varName: binaryExpr.getLeft().getText(), operator: binaryExpr.getOperatorToken().getText() };
     }
 
-    return { is: false, varName: undefined, operator: undefined };
+    return { yes: false, varName: undefined, operator: undefined };
 }
 
 export class Block {

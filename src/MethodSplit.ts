@@ -103,11 +103,25 @@ export class MethodSplit {
         return statements.length > 3
     }
 
+    private collectReturn(rt: ReturnStatement, rawReturnType: string, breakReturns: Set<ReturnStatement>) {
+        if (rawReturnType === "void") {
+            breakReturns.add(rt)
+        } else {
+            if (toTypeText(rt.getExpression()?.getType()) === rawReturnType) {
+                breakReturns.add(rt)
+            } else {
+                console.warn("ignore return:" + rt.getText())
+            }
+        }
+    }
     private scanAndSkipVarAndReturn(statements: (Statement | string)[], vars: Map<string, Param>
-        , start: number = 0, end: number = 0, returnType: Type): [number, Set<ChangedVal>, Set<ReturnStatement>] {
+        , start: number = 0, end: number = 0, rawReturnType: string): [number, number, Set<ChangedVal>, Set<ReturnStatement>] {
         const newVars = new Set<Param>()
         const changedVars = new Set<ChangedVal>()
-        const breakReturns = new Set<ReturnStatement>()
+        const midReturns = new Set<ReturnStatement>()
+        if (this.isLastStmtReturn(statements)) {
+            end -= 1
+        }
         for (let i = start; i < end; i++) {
             //FIXME 改成两边往中间扫描，减少对不必要行的跳过
             const stmt = statements[i]
@@ -120,49 +134,41 @@ export class MethodSplit {
                     start = i + 1
                 } else {
                     const isAssign = isAssignmentStatement(stmt)
-                    if (isAssign.is) {
+                    if (isAssign.yes) {
                         changedVars.add(new ChangedVal(isAssign.varName!, undefined, isAssign.operator!))
                     }
-                }
 
-                const blocks = getBlock(stmt)
-                for (const b of blocks) {
-                    switch (b.getParentKind()) {
-                        case SyntaxKind.FunctionDeclaration:
-                        case SyntaxKind.FunctionExpression:
-                        case SyntaxKind.ArrowFunction:
-                        case SyntaxKind.ClassDeclaration:
-                        case SyntaxKind.ModuleDeclaration:
-                            //这些块里面的return对外层函数无影响
-                            continue
-                        default:
-                            //扫描块，以便确定是否需要传递return语句
-                            {
-                                b.getStatements().forEach(stmt => {
-                                    switch (stmt.getKind()) {
-                                        case SyntaxKind.ReturnStatement: {
-                                            const rt = stmt.asKind(SyntaxKind.ReturnStatement)!
-                                            if (returnType.isVoid()) {
-                                                breakReturns.add(rt)
-                                            } else {
-                                                if (toTypeText(rt.getExpression()?.getType()) === toTypeText(returnType)) {
-                                                    breakReturns.add(rt)
-                                                } else {
-                                                    console.warn("ignore return:" + rt.getText())
+                    const blocks = getBlock(stmt)
+                    for (const b of blocks) {
+                        switch (b.getParentKind()) {
+                            case SyntaxKind.FunctionDeclaration:
+                            case SyntaxKind.FunctionExpression:
+                            case SyntaxKind.ArrowFunction:
+                            case SyntaxKind.ClassDeclaration:
+                            case SyntaxKind.ModuleDeclaration:
+                                //这些块里面的return对外层函数无影响
+                                continue
+                            default:
+                                //扫描块，以便确定是否需要传递return语句
+                                {
+                                    b.getStatements().forEach(stmt => {
+                                        switch (stmt.getKind()) {
+                                            case SyntaxKind.ReturnStatement: {
+                                                const rt = stmt.asKind(SyntaxKind.ReturnStatement)!
+                                                this.collectReturn(rt, rawReturnType, midReturns)
+                                                break
+                                            }
+                                            default: {
+                                                const isAssign = isAssignmentStatement(stmt)
+                                                if (isAssign.yes) {
+                                                    changedVars.add(new ChangedVal(isAssign.varName!, undefined, isAssign.operator!))
                                                 }
                                             }
-                                            break
-                                        }
-                                        default: {
-                                            const isAssign = isAssignmentStatement(stmt)
-                                            if (isAssign.is) {
-                                                changedVars.add(new ChangedVal(isAssign.varName!, undefined, isAssign.operator!))
-                                            }
-                                        }
 
-                                    }
-                                })
-                            }
+                                        }
+                                    })
+                                }
+                        }
                     }
                 }
                 //如果是字符串，说明是插入行，直接跳过
@@ -179,12 +185,40 @@ export class MethodSplit {
             }
             aVar.setType(vars.get(aVar.getName()!)!.getType())
         }
-        return [start, changedVars, breakReturns]
+        return [start, end, changedVars, midReturns]
     }
 
+    private isLastStmtReturn(statements: (Statement | string)[]) {
+        const lastStmt = statements[statements.length - 1]
+        if (lastStmt instanceof Statement && lastStmt.getKind() === SyntaxKind.ReturnStatement) {
+            return true
+        }
+        return false
+    }
 
+    private getTypedDefaultValue(type: Type): string {
+        if (type.isVoid()) {
+            return "undefined"
+        }
+        if (type.isNumber()) {
+            return "0"
+        }
+        if (type.isString()) {
+            return "\"\""
+        }
+        if (type.isBoolean()) {
+            return "false"
+        }
+        if (type.isArray()) {
+            return "[]"
+        }
+        if (type.isObject()) {
+            return "{}"
+        }
+        return ""
+    }
     private insertNewMethod(statements: (Statement | string)[], newVars: Map<string, Param>,
-        changedVars: Set<ChangedVal>, breakReturns: Set<ReturnStatement>, rawReturnType: Type): [MethodDeclaration | undefined, ReturnVal[] | undefined] {
+        changedVars: Set<ChangedVal>, midReturns: Set<ReturnStatement>, rawReturnType: Type): [MethodDeclaration | undefined, ReturnVal[] | undefined] {
         if (!this.currentCls || !this.currentMethod) {
             return [undefined, undefined]
         }
@@ -201,67 +235,52 @@ export class MethodSplit {
             })
         })
 
-        let newStatements: string[]
-        let returnType = "void"
-        let returns: ReturnVal[] | undefined = undefined
-
-        const lastStmt = statements[statements.length - 1]
-        if (lastStmt instanceof Statement && lastStmt.getKind() === SyntaxKind.ReturnStatement) {
-            newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
-            //如果最后一行是return语句，那说明中间的变量修改语句都不需要额外处理，直接填写原return变量的类型即可
-            const returnStmt = lastStmt.asKind(SyntaxKind.ReturnStatement)!
-            const rawReturnType = returnStmt.getExpression()?.getType()
-            if (rawReturnType) {
-                returnType = toTypeText(rawReturnType)
-            }
-        } else {
-            returns = []
-            if (breakReturns.size > 0) {
-                returns.push(new ReturnVal("w_b_", "boolean", "true"))
-            }
-            changedVars.forEach(v => {
-                returns!.push(new ReturnVal(v.getName(), v.getType(), v.getName()))//这些是变量，所以直接返回变量名
-            })
-            breakReturns.forEach(rt => {
-                const oldReturn = rt.getExpression()?.getText()
-                if (oldReturn) {
-                    rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')},${oldReturn}]`)
-                } else {
-                    rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')}]`)
-                }
-            })
-            if (rawReturnType) {
-                returns.push(new ReturnVal("r_t_", toTypeText(rawReturnType), `""`))
-            }
-            returns[0].setValue("false") //最后的返回，不中断外层函数
-            newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
-            newStatements.push(`return [${returns.map(v => v.getValue()).join(',')}]`)
-            returnType = `[${returns.map(v => v.getType()).join(',')}]`
+        const returns: ReturnVal[] = []
+        if (midReturns.size > 0) {
+            returns.push(new ReturnVal("w_b_", "boolean", "true"))
         }
+        changedVars.forEach(v => {
+            returns!.push(new ReturnVal(v.getName(), v.getType(), v.getName()))//这些是变量，所以直接返回变量名
+        })
+
+        midReturns.forEach(rt => {
+            const oldReturn = rt.getExpression()?.getText()
+            if (oldReturn) {
+                rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')},${oldReturn}]`)
+            } else {
+                rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')}]`)
+            }
+        })
+        if (!rawReturnType.isVoid() && midReturns.size > 0) {
+            //有非空中间返回时，才需要用r_t_传递中间返回值
+            returns.push(new ReturnVal("r_t_", toTypeText(rawReturnType), this.getTypedDefaultValue(rawReturnType)))
+        }
+        const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
+        newStatements.push(`return [${returns.map(v => v.getValue()).join(',')}]`)
 
         return [this.currentCls.addMethod({
             name: `z_${this.randStr.getString(10)}`,
             parameters: newParams,
             statements: newStatements,
-            returnType: returnType
+            returnType: `[${returns.map(v => v.getType()).join(',')}]`
         }), returns]
     }
 
-    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: ReturnVal[] | undefined, rawReturnType: Type) {
+    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: ReturnVal[] | undefined, rawReturnType: string) {
         const callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
         //向Block中添加调用新方法的语句
-        if (returns === undefined && !newMethod.getReturnType().isVoid()) {
-            statements.splice(insertIndex, 0, `return ${callNewMethodStmt}`)
+        // if (returns === undefined && !newMethod.getReturnType().isVoid()) {
+        //     statements.splice(insertIndex, 0, `return ${callNewMethodStmt}`)
+        // } else {
+        if (returns!.length > 0) {
+            const helpVarDefine = rawReturnType ? `let w_b_=false, r_t_:${rawReturnType}` : `let w_b_=false`
+            const breakIfLine = rawReturnType ? `if (w_b_) {return r_t_}` : `if (w_b_) {return;}`
+            const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt}; ${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
+            statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
         } else {
-            if (returns!.length > 0) {
-                const helpVarDefine = rawReturnType ? `let w_b_=false, r_t_:${toTypeText(rawReturnType)}` : `let w_b_=false`
-                const breakIfLine = rawReturnType ? `if (w_b_) {return r_t_}` : `if (w_b_) {return;}`
-                const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt}; ${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
-                statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
-            } else {
-                statements.splice(insertIndex, 0, callNewMethodStmt)
-            }
+            statements.splice(insertIndex, 0, callNewMethodStmt)
         }
+        // }
     }
     private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined, rawReturnType: Type) {
         const statements: (Statement | string)[] = block.getStatements()
@@ -269,6 +288,7 @@ export class MethodSplit {
             return
         }
 
+        const rawReturnTypeText = toTypeText(rawReturnType)
         const vars = new Map<string, Param>()
         let start = 0, end = 0
         if (splitRange) {
@@ -276,20 +296,20 @@ export class MethodSplit {
                 splitRange[1] = statements.length
             }
             [start, end] = splitRange
-            this.scanAndSkipVarAndReturn(statements, vars, 0, start, rawReturnType) //对于指定区间的操作，需要从0开始扫描，以便获得start之前的变量声明
+            this.scanAndSkipVarAndReturn(statements, vars, 0, start, rawReturnTypeText) //对于指定区间的操作，需要从0开始扫描，以便获得start之前的变量声明
         }
         do {
-            let changedVars: Set<ChangedVal>, breakReturns: Set<ReturnStatement>
+            let changedVars: Set<ChangedVal>, midReturns: Set<ReturnStatement>
             end = end === 0 ? this.getRandomInt(start, statements.length) : end;
-            [start, changedVars, breakReturns] = this.scanAndSkipVarAndReturn(statements, vars, start, end, rawReturnType)
+            [start, end, changedVars, midReturns] = this.scanAndSkipVarAndReturn(statements, vars, start, end, rawReturnTypeText)
 
             const extractStmts = statements.splice(start, end - start)
-            const [newMethod, returns] = this.insertNewMethod(extractStmts, vars, changedVars, breakReturns, rawReturnType)
+            const [newMethod, subMethodReturns] = this.insertNewMethod(extractStmts, vars, changedVars, midReturns, rawReturnType)
             if (!newMethod) {
                 return
             }
             // block.removeStatements([start, end-1])  //这个语句有bug，有些情况删除的不是指定行
-            this.insertCallMethodStatement(statements, newMethod, start, returns, rawReturnType)
+            this.insertCallMethodStatement(statements, newMethod, start, subMethodReturns, rawReturnTypeText)
             start = end - (end - start) + 1 //start的新位置是原始end-删除的行数+插入的行数，这里插入行为1
             end = 0
         } while (start < statements.length && splitRange === undefined)
