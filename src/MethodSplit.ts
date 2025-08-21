@@ -119,7 +119,8 @@ export class MethodSplit {
         const newVars = new Set<Param>()
         const changedVars = new Set<ChangedVal>()
         const midReturns = new Set<ReturnStatement>()
-        if (this.isLastStmtReturn(statements)) {
+        const lastStmt = statements[end-1]
+        if (lastStmt instanceof Statement && lastStmt.getKind() === SyntaxKind.ReturnStatement) {
             end -= 1
         }
         for (let i = start; i < end; i++) {
@@ -129,12 +130,16 @@ export class MethodSplit {
                 if (stmt.getKind() === SyntaxKind.VariableStatement) {
                     const varStmt = stmt.asKind(SyntaxKind.VariableStatement)!
                     varStmt.getDeclarations().forEach(decl => {
-                        newVars.add(new Param(decl.getName(), toTypeText(decl.getType())))
+                        const name = decl.getName()
+                        if (name === "w_b_" || name === "r_t_") {
+                            return
+                        }
+                        newVars.add(new Param(name, toTypeText(decl.getType())))
                     })
                     start = i + 1
                 } else {
                     const isAssign = isAssignmentStatement(stmt)
-                    if (isAssign.yes) {
+                    if (isAssign.yes && !isAssign.varName?.startsWith("[w_b_")) {
                         changedVars.add(new ChangedVal(isAssign.varName!, undefined, isAssign.operator!))
                     }
 
@@ -160,7 +165,7 @@ export class MethodSplit {
                                             }
                                             default: {
                                                 const isAssign = isAssignmentStatement(stmt)
-                                                if (isAssign.yes) {
+                                                if (isAssign.yes && !isAssign.varName?.startsWith("[w_b_")) {
                                                     changedVars.add(new ChangedVal(isAssign.varName!, undefined, isAssign.operator!))
                                                 }
                                             }
@@ -255,6 +260,10 @@ export class MethodSplit {
             //有非空中间返回时，才需要用r_t_传递中间返回值
             returns.push(new ReturnVal("r_t_", toTypeText(rawReturnType), this.getTypedDefaultValue(rawReturnType)))
         }
+        if (midReturns.size > 0) {
+            //如果有非空中间返回，结尾处的return要设置成false，表示不中断外层函数
+            returns[0].setValue("false")
+        }
         const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
         newStatements.push(`return [${returns.map(v => v.getValue()).join(',')}]`)
 
@@ -274,8 +283,8 @@ export class MethodSplit {
         // } else {
         if (returns!.length > 0) {
             const helpVarDefine = rawReturnType ? `let w_b_=false, r_t_:${rawReturnType}` : `let w_b_=false`
-            const breakIfLine = rawReturnType ? `if (w_b_) {return r_t_}` : `if (w_b_) {return;}`
-            const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt}; ${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
+            const breakIfLine = rawReturnType ? `if (w_b_) {return r_t_;}` : `if (w_b_) {return;}`
+            const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
             statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
         } else {
             statements.splice(insertIndex, 0, callNewMethodStmt)
