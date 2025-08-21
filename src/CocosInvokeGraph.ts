@@ -154,7 +154,7 @@ export class CocosInvokeGraph implements InvokeGraph {
                 return
             }
             this.cacheClassInvoke(classDecl.getName()!, json.handler, Method, file, json, fileContent)
-        } else if ("__type__" in json && !json.__type__.startsWith("cc.")) { //处理变量引用
+        } else if ("__type__" in json) { //处理变量引用
             const shortId = json.__type__
             const classDecl = this.getDefaultExportClassByShortId(shortId)
             if (classDecl === undefined) {

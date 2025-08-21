@@ -1,4 +1,4 @@
-import { Statement, Block as TsBlock, SyntaxKind, Node, Type, IterationStatement, WithStatement } from 'ts-morph';
+import { Statement, Block as TsBlock, SyntaxKind, Node, Type, IterationStatement, WithStatement, BinaryExpression } from 'ts-morph';
 import { TsRename } from './TsRename.ts';
 
 
@@ -12,9 +12,9 @@ function toTypeText(type: Type | undefined): string {
     return type.getText()
 }
 
-function isAssignmentStatement(statement: Statement): { yes: boolean, varName: string | undefined, operator: string | undefined } {
+function isAssignmentStatement(statement: Statement): { yes: boolean, expr: BinaryExpression | undefined } {
     if (statement.getKind() !== SyntaxKind.ExpressionStatement) {
-        return { yes: false, varName: undefined, operator: undefined };
+        return { yes: false, expr: undefined };
     }
 
     const exprStmt = statement.asKind(SyntaxKind.ExpressionStatement)!;
@@ -40,10 +40,10 @@ function isAssignmentStatement(statement: Statement): { yes: boolean, varName: s
             SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken // >>>=
         ];
 
-        return { yes: assignmentOperators.includes(operatorKind), varName: binaryExpr.getLeft().getText(), operator: binaryExpr.getOperatorToken().getText() };
+        return { yes: assignmentOperators.includes(operatorKind), expr: binaryExpr };
     }
 
-    return { yes: false, varName: undefined, operator: undefined };
+    return { yes: false, expr: undefined };
 }
 
 export class Block {
