@@ -1,6 +1,6 @@
 import seedrandom from 'seedrandom';
 
-export class RandStr {
+export class RandomSeed {
     private rng: seedrandom.PRNG;
     constructor(seed: string) {
         this.rng = seedrandom(seed);
@@ -18,5 +18,9 @@ export class RandStr {
         }
 
         return result;
+    }
+
+    getIntInRange(min: number, max: number): number {
+        return Math.floor(this.rng() * (max - min + 1)) + min;
     }
 }

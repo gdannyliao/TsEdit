@@ -1,5 +1,4 @@
-import { Statement, Block as TsBlock, SyntaxKind, Node, Type, IterationStatement, WithStatement, BinaryExpression } from 'ts-morph';
-import { TsRename } from './TsRename.ts';
+import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression } from 'ts-morph';
 
 
 function toTypeText(type: Type | undefined): string {

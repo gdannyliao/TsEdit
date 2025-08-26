@@ -1,11 +1,9 @@
-import { Project } from "ts-morph";
 import path from "node:path";
-import { RandStr } from "./RandStr.ts";
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
-import { existsSync, fstat, readFileSync } from "node:fs";
-import { TsRenameBuilder } from "./TsRenameBuilder.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder.ts";
 import process from "node:process";
 import * as fs from 'node:fs/promises';
 
@@ -30,19 +28,7 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
   })
   .parseSync()
 
-enum CodeType {
-  Class,
-  Property,
-  Method,
-}
 
-class CodeName {
-  constructor(
-    public name: string,
-    public type: CodeType,
-  ) {
-  }
-}
 
 function isCocosProject(projectDir: string): boolean {
   const projectJsonFile = path.join(projectDir, "project.json")
@@ -86,88 +72,19 @@ if (!isCocosProject(args.project)) {
 }
 
 
-const renameBuilder = new TsRenameBuilder().setProjectDir(args.project).setInvokeGraph(CocosInvokeGraph)
-let keepMap: Map<string, Set<string>> | undefined
+const obfusBuilder = new TsObfuseBuilder().setProjectDir(args.project)
 if (args['keep']) {
   const file = args['keep']
   if (!existsSync(file)) {
     console.error(`文件${file}不存在`)
   }
-  keepMap = await parseFileToMap(file)
+  obfusBuilder.setKeepMap(await parseFileToMap(file))
 }
 
-const project = new Project({ tsConfigFilePath: path.join(args['project'], "tsconfig.json") });
-project.resolveSourceFileDependencies();
+obfusBuilder.rename(CocosInvokeGraph)
+obfusBuilder.splitMethod()
 
-const renameMap = new Map<string, Map<string, CodeName>>()
-if (args['random']) {
-  const random = new RandStr(args['project'])
-  project.getSourceFiles().forEach(file => {
-    if (file.getFilePath().endsWith(".d.ts")) {
-      console.warn(`忽略d.ts文件: ${file.getFilePath()}`)
-      return
-    }
-    file.getClasses().forEach(classDecl => {
-      const className = classDecl.getName()
-      if (className === undefined) {
-        return
-      }
-
-      const keepSet = keepMap?.get(className)
-
-      if (keepSet !== undefined && keepSet.size === 0) {
-        console.warn(`保留类${className}`) //如果没有指定哪些属性要保留，则保留整个类所有的属性和类名
-        return
-      }
-
-      const classMap = new Map<string, CodeName>()
-      renameMap.set(className, classMap);
-
-      classDecl.getProperties().forEach(property => {
-        const propertyName = property.getName()
-        if (propertyName === undefined) {
-          return
-        }
-        if (keepSet?.has(propertyName)) {
-          console.warn(`保留类${className}的属性${propertyName}`)
-          return
-        }
-        classMap.set(propertyName, new CodeName(random.getString(6, "p_"), CodeType.Property))
-      })
-
-      classDecl.getMethods().forEach(method => {
-        const methodName = method.getName()
-        if (methodName === undefined) {
-          return
-        }
-        if (keepSet?.has(methodName)) {
-          console.warn(`保留类${className}的方法${methodName}`)
-          return
-        }
-        classMap.set(methodName, new CodeName(random.getString(6, "m_"), CodeType.Method))
-      })
-      classMap.set(className, new CodeName(random.getString(6, "C_"), CodeType.Class))
-    })
-  })
-
-}
-
-const renamer = renameBuilder.build()
-renameMap.forEach((classMap, className) => {
-  classMap.forEach((code, oldName) => {
-    switch (code.type) {
-      case CodeType.Class:
-        renamer.setClassName(className, code.name)
-        className = code.name
-        break;
-      case CodeType.Property:
-        renamer.setPropertyName(className, oldName, code.name)
-        break;
-      case CodeType.Method:
-        renamer.setMethodName(className, oldName, code.name)
-        break;
-    }
-  })
-})
-renamer.save()
-console.log("rename success")
+const scanner = obfusBuilder.build()
+scanner.scan()
+scanner.saveSync()
+console.log("obfus success")

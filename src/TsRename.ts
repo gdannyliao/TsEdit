@@ -1,63 +1,38 @@
-import { Project, SourceFile, MethodDeclaration, PropertyDeclaration, Type } from "ts-morph";
-import * as path from "node:path";
+import { MethodDeclaration, PropertyDeclaration, Type, ClassDeclaration } from "ts-morph";
 import { ClassMember, InvokeGraph } from "./InvokeGraph.ts";
+import { CodeVisitor } from "./CodeScanner.ts";
+import { RenameMap } from "./RenameMapBuilder.ts";
 
-export class TsRename {
+export class RenameVisitor implements CodeVisitor {
 
-    private project: Project
     private sdkClasses = new Map<string, Set<string>>()
+    private renameMap = new Map<string, RenameMap>()
+
     constructor(
-        project: string | Project,
         private invokeGraph: InvokeGraph,
     ) {
-        if (typeof project === 'string') {
-            // 初始化工程
-            this.project = new Project({
-                tsConfigFilePath: path.join(project, "tsconfig.json"),
-            });
-        } else {
-            this.project = project
-        }
-        this.project.resolveSourceFileDependencies();
-        this.project.getSourceFiles().forEach(file => {
-            if (!file.getBaseName().endsWith(".d.ts")) {
-                return
-            }
-            file.getModules().forEach(module => {
-                module.getClasses().forEach(classDecl => {
-                    const clsMember = new Set<string>()
-                    this.sdkClasses.set(`${module.getName()}.${classDecl.getName()}`, clsMember)
-                    classDecl.getMembers().forEach(member => {
-                        if (member instanceof PropertyDeclaration || member instanceof MethodDeclaration)
-                            clsMember.add(member.getName()!)
-                    })
-                })
-            })
-        })
     }
 
-    private changedFiles = new Set<SourceFile>()
+    setRenameMap(renameMap: Map<string, RenameMap>) {
+        this.renameMap = renameMap
+    }
 
-    setClassName(className: string, newName: string): TsRename {
-        this.project.getSourceFiles().forEach(file => {
-            if (file.getFilePath().endsWith(".d.ts")) {
-                return
-            }
-            const classDecl = file.getClass(className)
-            if (!classDecl) {
-                return
-            }
+    setSdkClasses(sdkClasses: Map<string, Set<string>>) {
+        this.sdkClasses = sdkClasses
+    }
 
-            console.log("rename class", className, newName)
-
-            this.changedFiles.add(file)
-            classDecl.findReferencesAsNodes().forEach((refNode) => {
-                this.changedFiles.add(refNode.getSourceFile())
-            })
-            classDecl.rename(newName)
-        })
-        this.invokeGraph.setClassName(className, newName)
-        return this;
+    visitClass(cls: ClassDeclaration): boolean {
+        const className = cls.getName()!
+        const classMap = this.renameMap.get(className)
+        if (!classMap) {
+            return false
+        }
+        console.log("rename class", className, classMap.getNewClassName())
+        cls.rename(classMap.getNewClassName()!)
+        this.renameMap.set(classMap.getNewClassName(), classMap)
+        this.renameMap.delete(className)
+        this.invokeGraph.setClassName(className, classMap.getNewClassName()!)
+        return true
     }
 
     /**
@@ -78,61 +53,45 @@ export class TsRename {
         })
     }
 
-    setMethodName(className: string, methodName: string, newName: string): TsRename {
-        this.project.getSourceFiles().some(file => {
-            if (file.getFilePath().endsWith(".d.ts")) {
-                return false
-            }
-            const classDecl = file.getClass(className)
-            if (!classDecl) {
-                return false
-            }
-            const method = classDecl.getMethod(methodName)
-            if (!method) {
-                return false
-            }
-            if (this.extendFromSdk(classDecl.getType(), methodName)) {
-                return true
-            }
+    visitMethod(cls: ClassDeclaration, method: MethodDeclaration): boolean {
+        const className = cls.getName()!
+        const classMap = this.renameMap.get(className)
+        if (!classMap) {
+            return false
+        }
+        const methodName = method.getName()!
+        const newMethodName = classMap.getNewMethod(methodName)
+        if (!newMethodName) {
+            return false
+        }
+        if (this.extendFromSdk(cls.getType(), methodName)) {
+            return false
+        }
+        console.log("rename method", className, methodName, newMethodName)
+        method.rename(newMethodName)
+        this.invokeGraph.setMethodName(className, methodName, newMethodName)
+        return true
 
-            console.log("rename method", className, methodName, newName)
-            this.changedFiles.add(file)
-            method.findReferencesAsNodes().forEach((refNode) => {
-                this.changedFiles.add(refNode.getSourceFile())
-            })
-            method.rename(newName)
-            this.invokeGraph.setMethodName(className, methodName, newName)
-            return true
-        })
-        return this
     }
 
-    setPropertyName(className: string, propertyName: string, newName: string): TsRename {
-        this.project.getSourceFiles().some(file => {
-            if (file.getFilePath().endsWith(".d.ts")) {
-                return false
-            }
-            const classDecl = file.getClass(className)
-            if (!classDecl) {
-                return false
-            }
-            const property = classDecl.getProperty(propertyName)
-            if (!property) {
-                return false
-            }
-            if (this.extendFromSdk(classDecl.getType(), propertyName)) {
-                return true
-            }
-            console.log("rename property", className, propertyName, newName)
-            this.changedFiles.add(file)
-            property.findReferencesAsNodes().forEach((refNode) => {
-                this.changedFiles.add(refNode.getSourceFile())
-            })
-            property.rename(newName)
-            this.invokeGraph.setPropertyName(className, propertyName, newName)
-            return true
-        })
-        return this
+    visitProperty(cls: ClassDeclaration, property: PropertyDeclaration): boolean {
+        const className = cls.getName()!
+        const classMap = this.renameMap.get(className)
+        if (!classMap) {
+            return false
+        }
+        const propertyName = property.getName()!
+        const newPropertyName = classMap.getNewProperty(propertyName)
+        if (!newPropertyName) {
+            return false
+        }
+        if (this.extendFromSdk(cls.getType(), propertyName)) {
+            return false
+        }
+        console.log("rename property", className, propertyName, newPropertyName)
+        property.rename(newPropertyName)
+        this.invokeGraph.setPropertyName(className, propertyName, newPropertyName)
+        return true
     }
 
     getClass(className: string): Map<string, ClassMember> | undefined {
@@ -145,12 +104,5 @@ export class TsRename {
 
     getProperty(className: string, propertyName: string): ClassMember | undefined {
         return this.invokeGraph.findProperty(className, propertyName)
-    }
-    save(): TsRename {
-        this.changedFiles.forEach(file => {
-            file.saveSync()
-        })
-        this.invokeGraph.save()
-        return this
     }
 }

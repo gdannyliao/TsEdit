@@ -1,8 +1,7 @@
-import { Block, Node, Project, ParameterDeclaration, Type, SyntaxKind, Statement, ClassDeclaration, MethodDeclaration, VariableDeclaration, ParameterDeclarationStructure, StructureKind, StatementStructures, SourceFile, ReturnStatement, BinaryExpression } from "ts-morph"
-import seedrandom from 'seedrandom';
-import { RandStr } from "./RandStr.ts";
-import { existsSync, mkdirSync } from "node:fs";
+import { Block, Node, Type, SyntaxKind, Statement, ClassDeclaration, MethodDeclaration, ParameterDeclarationStructure, StructureKind, ReturnStatement, BinaryExpression } from "ts-morph"
+import { RandomSeed } from "./random.ts";
 import { getBlock, toTypeText, isAssignmentStatement } from './ASTTools.ts'
+import { CodeVisitor } from "./CodeScanner.ts";
 
 class Param {
     constructor(private name: string, private type: string) {
@@ -64,42 +63,16 @@ class ReturnVal {
     }
 
 }
-class MethodStruct {
-    constructor(private name: string, private params: Param[], private statements: Statement[], private returns: Type[]) {
-    }
-
-    getName() {
-        return this.name
-    }
-
-    getStatements() {
-        return this.statements
-    }
-
-    getParams() {
-        return this.params
-    }
-
-    getReturns() {
-        return this.returns
-    }
-}
-export class MethodSplit {
-    private randNum: seedrandom.PRNG;
-    private randStr: RandStr
+export class MethodSplitVisitor implements CodeVisitor {
+    private random: RandomSeed
     private currentCls: ClassDeclaration | undefined
     private currentMethod: MethodDeclaration | undefined
-    private changedFiles: Set<SourceFile> = new Set()
 
-    constructor(private project: Project, seed: string) {
-        this.randNum = seedrandom(seed);
-        this.randStr = new RandStr(seed)
-    }
-    private getRandomInt(min: number, max: number) {
-        return Math.floor(this.randNum() * (max - min + 1)) + min;
+    constructor(seed: string) {
+        this.random = new RandomSeed(seed)
     }
 
-    private shouldSplit(statements: (Statement | string)[]):boolean {
+    private shouldSplit(statements: (Statement | string)[]): boolean {
         return statements.length > 3
     }
 
@@ -217,14 +190,6 @@ export class MethodSplit {
         return [start, end, changedVars, midReturns]
     }
 
-    private isLastStmtReturn(statements: (Statement | string)[]) {
-        const lastStmt = statements[statements.length - 1]
-        if (lastStmt instanceof Statement && lastStmt.getKind() === SyntaxKind.ReturnStatement) {
-            return true
-        }
-        return false
-    }
-
     private getTypedDefaultValue(type: Type): string {
         if (type.isVoid()) {
             return "undefined"
@@ -292,14 +257,14 @@ export class MethodSplit {
         newStatements.push(`return [${returns.map(v => v.getValue()).join(',')}]`)
 
         return [this.currentCls.addMethod({
-            name: `z_${this.randStr.getString(10)}`,
+            name: `z_${this.random.getString(10)}`,
             parameters: newParams,
             statements: newStatements,
             returnType: `[${returns.map(v => v.getType()).join(',')}]`
         }), returns]
     }
 
-    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: ReturnVal[] | undefined, rawReturnType: string):number {
+    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: ReturnVal[] | undefined, rawReturnType: string): number {
         const callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
         //向Block中添加调用新方法的语句
         if (returns!.length > 0) {
@@ -313,7 +278,7 @@ export class MethodSplit {
             return 1
         }
     }
-    private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined, rawReturnType: Type) {
+    private splitBlock(block: Block, rawReturnType: Type, splitRange: [number, number] | undefined = undefined) {
         const statements: (Statement | string)[] = block.getStatements()
         if (!this.shouldSplit(statements)) {
             return
@@ -331,9 +296,9 @@ export class MethodSplit {
         }
         do {
             let changedVars: Set<ChangedVal>, midReturns: Set<ReturnStatement>
-            end = end === 0 ? this.getRandomInt(start, statements.length) : end;
+            end = end === 0 ? this.random.getIntInRange(start, statements.length) : end;
             [start, end, changedVars, midReturns] = this.scanAndSkipVarAndReturn(statements, vars, start, end, rawReturnTypeText)
-            
+
             if (start === end) {
                 //调整后的分割点如果相同，说明没有可分了
                 return
@@ -359,54 +324,20 @@ export class MethodSplit {
         block.addStatements(newStatements)
     }
 
-    split(clsName: string, methodName: string, splitRange: ([number, number] | undefined) = undefined) {
-        this.project.getSourceFiles().some(file => {
-            if (file.getFilePath().endsWith(".d.ts")) {
-                return false
-            }
-            const classDecl = file.getClass(clsName)
-            if (!classDecl) {
-                return false
-            }
-            const method = classDecl.getMethod(methodName)
-            if (!method) {
-                return false
-            }
+    private visitMethodInternal(cls: ClassDeclaration, method: MethodDeclaration, range: [number, number] | undefined): boolean {
+        this.currentCls = cls
+        this.currentMethod = method
 
-            this.currentCls = classDecl
-            this.currentMethod = method
-            /*如何拆分方法？
-            -收集方法参数，存入栈中
-            -进行逐行扫描
-                -遇到块，则递归
-                -遇到let/const，存入栈中
-            */
-            const body = method.getBody()
-            if (Node.isBlock(body)) {
-                // const params = method.getParameters().reduce((map, param) => {
-                //     const p = param.toParam()
-                //     map.set(p.getName(), p)
-                //     return map
-                // }, new Map<string, Param>())
-                console.log(`split ${classDecl.getName()}.${method.getName()}`)
-                this.splitBlock(body, splitRange, method.getReturnType())
-            }
-
-            this.changedFiles.add(file)
+        const body = method.getBody()
+        if (Node.isBlock(body)) {
+            console.log(`split ${cls.getName()}.${method.getName()}`)
+            this.splitBlock(body, method.getReturnType(), range)
             return true
-        })
-    }
-
-    saveSync(outputDir?: string) {
-        for (const file of this.changedFiles) {
-            if (outputDir) {
-                if (!existsSync(outputDir)) {
-                    mkdirSync(outputDir, { recursive: true })
-                }
-                file.moveToDirectory(outputDir)
-            }
-            file.saveSync()
         }
+        return false
+    }
+    visitMethod(cls: ClassDeclaration, method: MethodDeclaration): boolean {
+        return this.visitMethodInternal(cls, method, undefined)
     }
 
 }
