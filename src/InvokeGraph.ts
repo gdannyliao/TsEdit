@@ -4,7 +4,7 @@ export interface InvokeGraph {
     setClassName(className: string, newName: string): void
     setPropertyName(className: string, propertyName: string, newName: string): void
     setMethodName(className: string, methodName: string, newName: string): void
-    save(): void
+    saveSync(): void
 
     parse(): void
 
@@ -32,7 +32,7 @@ export class ClassMember {
         this.memberName = newName
     }
 
-    addInvoke(invoke:Invoke) {
+    addInvoke(invoke: Invoke) {
         this.invokes.push(invoke)
     }
 
@@ -61,6 +61,7 @@ export class Invoke {
 
     changeInvokePointMethod(methodName: string, newName: string) {
         this.invokePoint["handler"] = newName
+        this.invokeChanged = true
     }
 
     save() {

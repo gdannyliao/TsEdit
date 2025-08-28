@@ -73,7 +73,7 @@ class SplitMethodSample {
         var v1 = "var1"
         console.log("line1")
         console.log("line2")
-        console.log("line3")
+        console.log("line3");
         v1 = "var2"
         console.log("line4")
         console.log("line5")
@@ -124,7 +124,7 @@ class SplitMethodSample {
         console.log("line8")
     }
 
-    
+
     withIfReturnHasValue(text: string): string {
         /* if中遇到含有值的return，需要将值传递回上层。子函数前添加Boolean值表示子函数是否有中断
     fun1(text: string): [boolean, string] {
@@ -170,39 +170,58 @@ class SplitMethodSample {
         return "return2"
     }
 
-    withIfReturnAndVarChange(text: string):string {
-                /* if中遇到含有值的return，需要将值传递回上层。子函数前添加Boolean值表示子函数是否有中断
-    fun1(text: string, var1: string): [boolean, int, string] {
-        if (text) {
-            var1 = 2
-            console.log("text is not empty")
-            return [true, var1, "return1"]
-        }
-        console.log("line5")
-        console.log("line6")
-        return [false, var1, ""]
-    }
     withIfReturnAndVarChange(text: string): string {
+        /* if中遇到含有值的return，需要将值传递回上层。子函数前添加Boolean值表示子函数是否有中断
+fun1(text: string, var1: string): [boolean, int, string] {
+if (text) {
+    var1 = 2
+    console.log("text is not empty")
+    return [true, var1, "return1"]
+}
+console.log("line5")
+console.log("line6")
+return [false, var1, ""]
+}
+withIfReturnAndVarChange(text: string): string {
 
+console.log("line1")
+console.log("line2")
+let var1 = 1
+
+console.log("line3")
+console.log("line4")
+
+let willBreak__ = false, returnValue__ = ""
+[willBreak__, var1, returnValue__] = fun1(text);
+if (willBreak__) {
+    return returnValue__
+}
+
+console.log("line7")
+console.log("var1=" + var1)
+console.log("line8")
+return "return2"
+}
+*/
         console.log("line1")
         console.log("line2")
         let var1 = 1
-
         console.log("line3")
         console.log("line4")
-
-        let willBreak__ = false, returnValue__ = ""
-        [willBreak__, var1, returnValue__] = fun1(text);
-        if (willBreak__) {
-            return returnValue__
+        if (text) {
+            var1 = 2
+            console.log("text is not empty")
+            return "return1"
         }
-
+        console.log("line5")
+        console.log("line6")
         console.log("line7")
         console.log("var1=" + var1)
         console.log("line8")
         return "return2"
     }
-        */
+
+    async withAsyncIfReturnAndVarChange(text: string): Promise<string> {
         console.log("line1")
         console.log("line2")
         let var1 = 1

@@ -7,24 +7,18 @@ import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder.ts";
 import process from "node:process";
 import * as fs from 'node:fs/promises';
 
-const args = yargs(hideBin(process.argv)).scriptName("ts-rename")
+const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
   .option('project', {
     type: 'string', description: '要处理的ts项目路径', require: true, alias: 'p'
   })
   .option('name-map', {
-    type: 'string', description: '名称映射关系文件路径', alias: 'n'
-  })
-  .option('random', {
-    type: 'boolean', description: '是否随机重命名', alias: 'r'
+    type: 'string', description: '名称映射关系文件路径，未指定的类和属性将会被随机重命名', alias: 'n'
   })
   .option('keep', {
     type: 'string', description: '要保留的符号名，以类全名为首行，后跟-PROPERTY_NAME作为此类的属性名', alias: 'k'
   })
-  .check((argv) => {
-    if (!argv['name-map'] && !argv['random']) {
-      throw new Error("请指定名称映射文件或指定随机重命名")
-    }
-    return true
+  .option('split-method', {
+    type: 'boolean', description: '是否将方法拆分成多个函数', alias: 's'
   })
   .parseSync()
 
@@ -82,7 +76,10 @@ if (args['keep']) {
 }
 
 obfusBuilder.rename(CocosInvokeGraph)
-obfusBuilder.splitMethod()
+
+if (args['split-method']) {
+  obfusBuilder.splitMethod()
+}
 
 const scanner = obfusBuilder.build()
 scanner.scan()

@@ -50,6 +50,7 @@ export class TsObfusBuilder {
             const invokeGraph = new this.graphType(this.projectDir, project)
             invokeGraph.parse()
 
+            scanner.addInvokeGraph(invokeGraph)
             const tsRename = new RenameVisitor(invokeGraph)
 
             scanner.addVisitor(tsRename)

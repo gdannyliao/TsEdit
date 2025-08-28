@@ -228,7 +228,7 @@ export class CocosInvokeGraph implements InvokeGraph {
         return this.classMembers.get(className)?.get(propertyName)
     }
 
-    save(): void {
+    saveSync(): void {
         this.classMembers.forEach((classMember, className) => {
             classMember.forEach((member, memberName) => {
                 member.getInvokes().forEach(invoke => {

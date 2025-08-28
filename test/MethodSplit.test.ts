@@ -153,9 +153,7 @@ test('MethodSplitWithVar', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withVar")!
     const statements = method.getStatements()
-    expect(statements[4].getText()).toBe("let w_b_=false, r_t_:void;")
-    expect(statements[5].getText()).toBe("[v1] = this.z_TZ98WFiybj(v1);")
-    expect(statements[6].getText()).toBe("if (w_b_) {return r_t_;}")
+    expect(statements[4].getText()).toBe("[v1] = this.z_TZ98WFiybj(v1);")
 
 })
 
@@ -176,7 +174,7 @@ test('MethodSplitWithIfReturn', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIfReturn")!
     const statements = method.getStatements()
-    expect(statements[3].getText()).toBe("let w_b_=false, r_t_:void;")
+    expect(statements[3].getText()).toBe("let w_b_ = false;")
     expect(statements[4].getText()).toBe("[w_b_] = this.z_TZ98WFiybj(text);")
 
     const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
@@ -202,7 +200,7 @@ test('MethodSplitwithIfReturnHasValue', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIfReturnHasValue")!
     const statements = method.getStatements()
-    expect(statements[3].getText()).toBe("let w_b_=false, r_t_:string;")
+    expect(statements[3].getText()).toBe(`let w_b_ = false,r_t_ = "";`)
     expect(statements[4].getText()).toBe("[w_b_,r_t_] = this.z_TZ98WFiybj(text);")
 
     const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
@@ -229,8 +227,35 @@ test('withIfReturnAndVarChange', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIfReturnAndVarChange")!
     const statements = method.getStatements()
-    expect(statements[4].getText()).toBe("let w_b_=false, r_t_:string;")
+    expect(statements[4].getText()).toBe(`let w_b_ = false,r_t_ = "";`)
     expect(statements[5].getText()).toBe("[w_b_,var1,r_t_] = this.z_TZ98WFiybj(text,var1);")
+
+    const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
+    expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)
+    expect(subMethod[3].getText()).toBe(`return [false,var1,""]`)
+})
+
+test('withAsyncIfReturnAndVarChange', () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplitVisitor('1234')
+    // @ts-ignore
+    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withAsyncIfReturnAndVarChange")!, [4, 7])
+    // @ts-ignore
+    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withAsyncIfReturnAndVarChange")!, [8, 11])
+    saveSync(project, outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+
+    const sourceFile = outputProject.getSourceFile(`${outputDir}/SplitMethodSample.ts`)
+    const cls = sourceFile!.getClass("SplitMethodSample")!
+    const method = cls.getMethod("withAsyncIfReturnAndVarChange")!
+    const statements = method.getStatements()
+    expect(statements[4].getText()).toBe("let w_b_ = false,r_t_0 = \"\";")
+    expect(statements[5].getText()).toBe("[w_b_,var1,r_t_0] = await this.z_TZ98WFiybj(text,var1);")
 
     const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
     expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)

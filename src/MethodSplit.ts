@@ -1,7 +1,8 @@
 import { Block, Node, Type, SyntaxKind, Statement, ClassDeclaration, MethodDeclaration, ParameterDeclarationStructure, StructureKind, ReturnStatement, BinaryExpression } from "ts-morph"
 import { RandomSeed } from "./random.ts";
-import { getBlock, toTypeText, isAssignmentStatement } from './ASTTools.ts'
+import { getBlock, toTypeText, isAssignmentStatement, isAsyncFunc, isPromiseType } from './ASTTools.ts'
 import { CodeVisitor } from "./CodeScanner.ts";
+import { isPromise } from "node:util/types";
 
 class Param {
     constructor(private name: string, private type: string) {
@@ -41,9 +42,9 @@ class ChangedVal {
     }
 }
 
-class ReturnVal {
+class NewReturnVal {
     constructor(private name: string | undefined = undefined,
-        private type: string | undefined = undefined, private value: string | undefined = undefined) {
+        private type: string | undefined = undefined, private value: string | undefined = undefined, private isPassVal: boolean = false) {
     }
 
     getName() {
@@ -60,6 +61,13 @@ class ReturnVal {
 
     setValue(value: string) {
         this.value = value
+    }
+
+    /**
+     * 是否是传递值。传递值，不需要创建新变量来接收。用于从子方法外部传进去的变量
+     */
+    isPassValue() {
+        return this.isPassVal
     }
 
 }
@@ -128,7 +136,7 @@ export class MethodSplitVisitor implements CodeVisitor {
                     const varStmt = stmt.asKind(SyntaxKind.VariableStatement)!
                     varStmt.getDeclarations().forEach(decl => {
                         const name = decl.getName()
-                        if (name === "w_b_" || name === "r_t_") {
+                        if (name === "w_b_" || name.startsWith("r_t_")) {
                             return
                         }
                         newVars.add(new Param(name, toTypeText(decl.getType())))
@@ -157,7 +165,8 @@ export class MethodSplitVisitor implements CodeVisitor {
                                         switch (stmt.getKind()) {
                                             case SyntaxKind.ReturnStatement: {
                                                 const rt = stmt.asKind(SyntaxKind.ReturnStatement)!
-                                                this.collectReturn(rt, rawReturnType, midReturns)
+                                                midReturns.add(rt)
+                                                // this.collectReturn(rt, rawReturnType, midReturns)
                                                 break
                                             }
                                             default: {
@@ -190,7 +199,34 @@ export class MethodSplitVisitor implements CodeVisitor {
         return [start, end, changedVars, midReturns]
     }
 
-    private getTypedDefaultValue(type: Type): string {
+    private getDefaultValueByString(type: string | undefined): string {
+        if (type === undefined) {
+            return ""
+        }
+        if (type === "void") {
+            return "undefined"
+        }
+        if (type === "number") {
+            return "0"
+        }
+        if (type === "string") {
+            return "\"\""
+        }
+        if (type === "boolean") {
+            return "false"
+        }
+        if (type === "any") {
+            return "undefined"
+        }
+        if (type === "object") {
+            return "{}"
+        }
+        if (type === "array") {
+            return "[]"
+        }
+        return ""
+    }
+    private getDefaultValueByType(type: Type): string {
         if (type.isVoid()) {
             return "undefined"
         }
@@ -211,8 +247,10 @@ export class MethodSplitVisitor implements CodeVisitor {
         }
         return ""
     }
+
     private insertNewMethod(statements: (Statement | string)[], newVars: Map<string, Param>,
-        changedVars: Set<ChangedVal>, midReturns: Set<ReturnStatement>, rawReturnType: Type): [MethodDeclaration | undefined, ReturnVal[] | undefined] {
+        changedVars: Set<ChangedVal>, midReturns: Set<ReturnStatement>): [MethodDeclaration | undefined, NewReturnVal[] | undefined] {
+
         if (!this.currentCls || !this.currentMethod) {
             return [undefined, undefined]
         }
@@ -229,15 +267,18 @@ export class MethodSplitVisitor implements CodeVisitor {
             })
         })
 
-        const returns: ReturnVal[] = []
+        const returns: NewReturnVal[] = []
+        const rawReturnType = this.currentMethod.getReturnType()
+        const isPromise = isPromiseType(rawReturnType)
+
         if (midReturns.size > 0) {
-            returns.push(new ReturnVal("w_b_", "boolean", "true"))
+            returns.push(new NewReturnVal("w_b_", "boolean", "true"))
         }
         changedVars.forEach(v => {
-            returns!.push(new ReturnVal(v.getName(), v.getType(), v.getName()))//这些是变量，所以直接返回变量名
+            returns!.push(new NewReturnVal(v.getName(), v.getType(), v.getName(), true))//这些是变量，所以直接返回变量名
         })
 
-        midReturns.forEach(rt => {
+        midReturns.forEach(rt => { //这里的修改会改变this.currentMethod.getReturnType()的返回值
             const oldReturn = rt.getExpression()?.getText()
             if (oldReturn) {
                 rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')},${oldReturn}]`)
@@ -245,9 +286,16 @@ export class MethodSplitVisitor implements CodeVisitor {
                 rt.replaceWithText(`return [${returns!.map(v => v.getValue()).join(',')}]`)
             }
         })
+
         if (!rawReturnType.isVoid() && midReturns.size > 0) {
             //有非空中间返回时，才需要用r_t_传递中间返回值
-            returns.push(new ReturnVal("r_t_", toTypeText(rawReturnType), this.getTypedDefaultValue(rawReturnType)))
+            if (isPromise.yes) {
+                for (let i = 0; i < isPromise.innerTypes!.length; i++) {
+                    returns.push(new NewReturnVal(`r_t_${i}`, toTypeText(isPromise.innerTypes![i]), this.getDefaultValueByType(isPromise.innerTypes![i])))
+                }
+            } else {
+                returns.push(new NewReturnVal("r_t_", toTypeText(rawReturnType), this.getDefaultValueByType(rawReturnType)))
+            }
         }
         if (midReturns.size > 0) {
             //如果有非空中间返回，结尾处的return要设置成false，表示不中断外层函数
@@ -260,31 +308,52 @@ export class MethodSplitVisitor implements CodeVisitor {
             name: `z_${this.random.getString(10)}`,
             parameters: newParams,
             statements: newStatements,
-            returnType: `[${returns.map(v => v.getType()).join(',')}]`
+            returnType: isPromise.yes ? `Promise<[${returns.map(v => v.getType()).join(',')}]>` : `[${returns.map(v => v.getType()).join(',')}]`,
+            isAsync: isPromise.yes
         }), returns]
     }
 
-    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: ReturnVal[] | undefined, rawReturnType: string): number {
-        const callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
+    private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: NewReturnVal[] | undefined, rawReturnType: string): number {
+        let callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
+        if (isPromiseType(this.currentMethod?.getReturnType()).yes) {
+            callNewMethodStmt = `await ${callNewMethodStmt}`
+        }
         //向Block中添加调用新方法的语句
-        if (returns!.length > 0) {
-            const helpVarDefine = rawReturnType ? `let w_b_=false, r_t_:${rawReturnType}` : `let w_b_=false`
-            const breakIfLine = rawReturnType ? `if (w_b_) {return r_t_;}` : `if (w_b_) {return;}`
-            const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
-            statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
-            return 3
+        if (returns && returns.length > 0) {
+            const [defines, names] = returns.reduce((acc, cur, idx) => {
+                if (cur.isPassValue()) {
+                    return acc
+                }
+
+                acc[0].push(`${cur.getName()} = ${this.getDefaultValueByString(cur.getType())}`)
+                if (idx !== 0) {
+                    acc[1].push(`${cur.getName()}`)
+                }
+                return acc
+            }, [[] as string[], [] as string[]])
+
+            if (returns[0].getName() === "w_b_") {
+                const helpVarDefine = `let ${defines.join(',')}`
+                const breakIfLine = `if (w_b_) {return ${names.join(',')}}`
+                const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
+                statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
+                return 3
+            } else {
+                statements.splice(insertIndex, 0, `[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};`)
+                return 1
+            }
         } else {
             statements.splice(insertIndex, 0, callNewMethodStmt)
             return 1
         }
     }
-    private splitBlock(block: Block, rawReturnType: Type, splitRange: [number, number] | undefined = undefined) {
+    private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined) {
         const statements: (Statement | string)[] = block.getStatements()
-        if (!this.shouldSplit(statements)) {
+        if (!this.shouldSplit(statements) || !this.currentMethod) {
             return
         }
 
-        const rawReturnTypeText = toTypeText(rawReturnType)
+        const rawReturnTypeText = toTypeText(this.currentMethod.getReturnType())
         const vars = new Map<string, Param>()
         let start = 0, end = 0
         if (splitRange) {
@@ -305,7 +374,7 @@ export class MethodSplitVisitor implements CodeVisitor {
             }
             console.log(`--split ${start}-${end}`)
             const extractStmts = statements.splice(start, end - start)
-            const [newMethod, subMethodReturns] = this.insertNewMethod(extractStmts, vars, changedVars, midReturns, rawReturnType)
+            const [newMethod, subMethodReturns] = this.insertNewMethod(extractStmts, vars, changedVars, midReturns)
             if (!newMethod) {
                 return
             }
@@ -331,7 +400,7 @@ export class MethodSplitVisitor implements CodeVisitor {
         const body = method.getBody()
         if (Node.isBlock(body)) {
             console.log(`split ${cls.getName()}.${method.getName()}`)
-            this.splitBlock(body, method.getReturnType(), range)
+            this.splitBlock(body, range)
             return true
         }
         return false

@@ -1,10 +1,51 @@
-import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression } from 'ts-morph';
+import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression, MethodDeclaration, FunctionDeclaration } from 'ts-morph';
 
+export function isPromiseType(type: Type | undefined): {
+    yes: boolean;
+    innerTypes?: Type[];
+} {
+    if (type === undefined) {
+        return { yes: false }
+    }
+    const typeText = type.getText();
+    
+    // 检查是否是Promise类型
+    if (typeText.startsWith('Promise<') && typeText.endsWith('>')) {
+        // 获取类型参数
+        const typeArgs = type.getTypeArguments();
+        
+        return {
+            yes: true,
+            innerTypes: typeArgs
+        };
+    }
+    
+    return { yes: false };
+}
+
+/**
+ * 检查方法是否是async异步方法
+ * @param method 要检查的方法声明
+ * @returns 如果是async方法返回true，否则返回false
+ */
+export function isAsyncFunc(method: MethodDeclaration | FunctionDeclaration|undefined): boolean {
+    if (method === undefined) {
+        return false
+    }
+    // 方法1: 检查是否有async修饰符
+    const modifiers = method.getModifiers();
+    const hasAsyncModifier = modifiers.some(modifier =>
+        modifier.getKind() === SyntaxKind.AsyncKeyword
+    );
+
+    return hasAsyncModifier;
+}
 
 function toTypeText(type: Type | undefined): string {
     if (type === undefined) {
         return "void"
     }
+    
     if (type.isLiteral()) {
         return type.getBaseTypeOfLiteralType().getText()
     }
@@ -75,7 +116,7 @@ function getInternalStmt(stmt: Statement, parentKind: SyntaxKind | undefined) {
  * @param stmt 要处理的语句
  * @returns 返回对应的块、语句或undefined
  */
-function getBlock(stmt: Statement): Block[] {
+export function getBlock(stmt: Statement): Block[] {
     const kind = stmt.getKind();
 
     switch (kind) {
@@ -177,31 +218,6 @@ function getBlock(stmt: Statement): Block[] {
 }
 
 /**
- * 获取If语句的所有分支（包括else分支）
- * @param ifStmt If语句
- * @returns 返回所有分支的数组
- */
-function getAllBranchesFromIfStatement(ifStmt: Statement): Statement[] {
-    if (ifStmt.getKind() !== SyntaxKind.IfStatement) {
-        return [];
-    }
-
-    const ifStatement = ifStmt.asKind(SyntaxKind.IfStatement)!;
-    const branches: Statement[] = [];
-
-    // 添加then分支
-    branches.push(ifStatement.getThenStatement());
-
-    // 添加else分支（如果存在）
-    const elseStatement = ifStatement.getElseStatement();
-    if (elseStatement) {
-        branches.push(elseStatement);
-    }
-
-    return branches;
-}
-
-/**
  * 检查语句是否包含块
  * @param stmt 要检查的语句
  * @returns 如果语句包含块则返回true
@@ -211,7 +227,5 @@ function hasBlock(stmt: Statement): boolean {
 }
 
 export {
-    getBlock,
-    getAllBranchesFromIfStatement,
     hasBlock, toTypeText, isAssignmentStatement
 };
