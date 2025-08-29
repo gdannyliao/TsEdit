@@ -8,18 +8,18 @@ export function isPromiseType(type: Type | undefined): {
         return { yes: false }
     }
     const typeText = type.getText();
-    
+
     // 检查是否是Promise类型
     if (typeText.startsWith('Promise<') && typeText.endsWith('>')) {
         // 获取类型参数
         const typeArgs = type.getTypeArguments();
-        
+
         return {
             yes: true,
             innerTypes: typeArgs
         };
     }
-    
+
     return { yes: false };
 }
 
@@ -28,7 +28,7 @@ export function isPromiseType(type: Type | undefined): {
  * @param method 要检查的方法声明
  * @returns 如果是async方法返回true，否则返回false
  */
-export function isAsyncFunc(method: MethodDeclaration | FunctionDeclaration|undefined): boolean {
+export function isAsyncFunc(method: MethodDeclaration | FunctionDeclaration | undefined): boolean {
     if (method === undefined) {
         return false
     }
@@ -41,11 +41,23 @@ export function isAsyncFunc(method: MethodDeclaration | FunctionDeclaration|unde
     return hasAsyncModifier;
 }
 
+export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | undefined): boolean {
+    if (method === undefined) {
+        return false
+    }
+    const modifiers = method.getModifiers();
+    const hasStaticModifier = modifiers.some(modifier =>
+        modifier.getKind() === SyntaxKind.StaticKeyword
+    );
+
+    return hasStaticModifier;
+}
+
 function toTypeText(type: Type | undefined): string {
     if (type === undefined) {
         return "void"
     }
-    
+
     if (type.isLiteral()) {
         return type.getBaseTypeOfLiteralType().getText()
     }

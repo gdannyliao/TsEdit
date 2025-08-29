@@ -1,6 +1,6 @@
 import { Block, Node, Type, SyntaxKind, Statement, ClassDeclaration, MethodDeclaration, ParameterDeclarationStructure, StructureKind, ReturnStatement, BinaryExpression } from "ts-morph"
 import { RandomSeed } from "./random.ts";
-import { getBlock, toTypeText, isAssignmentStatement, isAsyncFunc, isPromiseType } from './ASTTools.ts'
+import { getBlock, toTypeText, isAssignmentStatement, isAsyncFunc, isPromiseType, isStaticFunc } from './ASTTools.ts'
 import { CodeVisitor } from "./CodeScanner.ts";
 import { isPromise } from "node:util/types";
 
@@ -81,7 +81,9 @@ export class MethodSplitVisitor implements CodeVisitor {
     }
 
     private shouldSplit(statements: (Statement | string)[]): boolean {
-        return statements.length > 3
+        if (statements.length <= 3) return false
+        if (isStaticFunc(this.currentMethod)) return false
+        return true
     }
 
     private collectReturn(rt: ReturnStatement, rawReturnType: string, breakReturns: Set<ReturnStatement>) {
@@ -201,7 +203,7 @@ export class MethodSplitVisitor implements CodeVisitor {
 
     private getDefaultValueByString(type: string | undefined): string {
         if (type === undefined) {
-            return ""
+            return "undefined"
         }
         if (type === "void") {
             return "undefined"
@@ -224,7 +226,7 @@ export class MethodSplitVisitor implements CodeVisitor {
         if (type === "array") {
             return "[]"
         }
-        return ""
+        return "undefined"
     }
     private getDefaultValueByType(type: Type): string {
         if (type.isVoid()) {
@@ -245,7 +247,7 @@ export class MethodSplitVisitor implements CodeVisitor {
         if (type.isObject()) {
             return "{}"
         }
-        return ""
+        return "undefined"
     }
 
     private insertNewMethod(statements: (Statement | string)[], newVars: Map<string, Param>,
@@ -347,10 +349,10 @@ export class MethodSplitVisitor implements CodeVisitor {
             return 1
         }
     }
-    private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined) {
+    private splitBlock(block: Block, splitRange: [number, number] | undefined = undefined): boolean {
         const statements: (Statement | string)[] = block.getStatements()
-        if (!this.shouldSplit(statements) || !this.currentMethod) {
-            return
+        if (!this.currentMethod || !this.shouldSplit(statements)) {
+            return false
         }
 
         const rawReturnTypeText = toTypeText(this.currentMethod.getReturnType())
@@ -389,8 +391,9 @@ export class MethodSplitVisitor implements CodeVisitor {
         } while (start < statements.length && splitRange === undefined)
 
         const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
-        block.removeStatements([0, block.getStatements().length])
+        block.removeStatements([0, block.getStatementsWithComments().length])
         block.addStatements(newStatements)
+        return true
     }
 
     private visitMethodInternal(cls: ClassDeclaration, method: MethodDeclaration, range: [number, number] | undefined): boolean {
@@ -400,8 +403,7 @@ export class MethodSplitVisitor implements CodeVisitor {
         const body = method.getBody()
         if (Node.isBlock(body)) {
             console.log(`split ${cls.getName()}.${method.getName()}`)
-            this.splitBlock(body, range)
-            return true
+            return this.splitBlock(body, range)
         }
         return false
     }
