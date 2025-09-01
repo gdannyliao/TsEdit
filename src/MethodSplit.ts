@@ -400,6 +400,7 @@ export class MethodSplitVisitor implements CodeVisitor {
         const newStatements = statements.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
         block.removeStatements([0, block.getStatementsWithComments().length])
         block.addStatements(newStatements)
+        this.hasWillBreakFlag = false
         return true
     }
 
