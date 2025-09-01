@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder.ts";
 import process from "node:process";
 import * as fs from 'node:fs/promises';
+import { RenameMap } from "./RenameMapBuilder.ts";
 
 const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
   .option('project', {
@@ -37,7 +38,7 @@ function isCocosProject(projectDir: string): boolean {
   return true
 }
 
-async function parseFileToMap(filePath: string): Promise<Map<string, Set<string>>> {
+async function parseKeepMap(filePath: string): Promise<Map<string, Set<string>>> {
   const data = await fs.readFile(filePath, 'utf-8');
   const lines = data
     .split('\n')
@@ -45,7 +46,7 @@ async function parseFileToMap(filePath: string): Promise<Map<string, Set<string>
     .filter(line => line.length > 0);
 
   const result = new Map<string, Set<string>>();
-  let className: string | null = null;
+  let className: string | undefined = undefined;
 
   for (const line of lines) {
     if (line.startsWith('-')) {
@@ -54,6 +55,32 @@ async function parseFileToMap(filePath: string): Promise<Map<string, Set<string>
     } else {
       className = line;
       result.set(className, new Set());
+    }
+  }
+
+  return result;
+}
+
+
+async function parseNameMap(filePath: string): Promise<Map<string, RenameMap>> {
+  const data = await fs.readFile(filePath, 'utf-8');
+  const lines = data
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  const result = new Map<string, RenameMap>();
+  let className: string | undefined = undefined;
+  for (const line of lines) {
+    if (line.startsWith('-')) {
+      const propertyName = line.substring(1); // 去掉 `-`
+      const renameMap = result.get(className!)!
+      const [oldName, newName] = propertyName.split('=');
+      renameMap.setProperty(oldName, newName)
+    } else {
+      const [oldName, newName] = line.split('=');
+      result.set(oldName, new RenameMap(oldName, newName));
+      className = oldName
     }
   }
 
@@ -72,10 +99,10 @@ if (args['keep']) {
   if (!existsSync(file)) {
     console.error(`文件${file}不存在`)
   }
-  obfusBuilder.setKeepMap(await parseFileToMap(file))
+  obfusBuilder.setKeepMap(await parseKeepMap(file))
 }
 
-obfusBuilder.rename(CocosInvokeGraph)
+obfusBuilder.rename(CocosInvokeGraph, args['name-map'] ? await parseNameMap(args['name-map']) : undefined)
 
 if (args['split-method']) {
   obfusBuilder.splitMethod()

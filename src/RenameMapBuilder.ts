@@ -79,6 +79,12 @@ export class RenameMapBuilder {
         })
     }
 
+    private getSpecifiedPropName(className: string, propName: string): string | undefined {
+        if (this.specifiedNames !== undefined && this.specifiedNames.has(className)) {
+            return this.specifiedNames.get(className)!.getNewProperty(propName)
+        }
+        return undefined
+    }
     build(seed: string): [Map<string, RenameMap>, Map<string, Set<string>>] {
         const renameMaps = new Map<string, RenameMap>()
         const sdkClasses = new Map<string, Set<string>>()
@@ -136,6 +142,12 @@ export class RenameMapBuilder {
                         return
                     }
                     if (renameMap.getNewMethod(methodName)) {
+                        return
+                    }
+
+                    const newPropName = this.getSpecifiedPropName(className, methodName)
+                    if (newPropName) { //如果有指定名，指定名同时视为方法名
+                        renameMap.setMethod(methodName, newPropName)
                         return
                     }
                     renameMap.setMethod(methodName, random.getString(6, "m_"))
