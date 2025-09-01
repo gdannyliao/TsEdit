@@ -314,7 +314,7 @@ export class MethodSplitVisitor implements CodeVisitor {
             isAsync: isPromise.yes
         }), returns]
     }
-
+    private hasWillBreakFlag = false
     private insertCallMethodStatement(statements: (Statement | string)[], newMethod: MethodDeclaration, insertIndex: number, returns: NewReturnVal[] | undefined, rawReturnType: string): number {
         let callNewMethodStmt = `this.${newMethod.getName()}(${newMethod.getParameters().map(param => param.getName()).join(',')})`
         if (isPromiseType(this.currentMethod?.getReturnType()).yes) {
@@ -335,11 +335,18 @@ export class MethodSplitVisitor implements CodeVisitor {
             }, [[] as string[], [] as string[]])
 
             if (returns[0].getName() === "w_b_") {
-                const helpVarDefine = `let ${defines.join(',')}`
-                const breakIfLine = `if (w_b_) {return ${names.join(',')}}`
-                const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
-                statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
-                return 3
+                if (this.hasWillBreakFlag) {
+                    const breakIfLine = `if (w_b_) {return ${names.join(',')}}`
+                    const receiveReturnVarStmt = `[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
+                    statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
+                } else {
+                    this.hasWillBreakFlag = true
+                    const helpVarDefine = `let ${defines.join(',')}`
+                    const breakIfLine = `if (w_b_) {return ${names.join(',')}}`
+                    const receiveReturnVarStmt = `${helpVarDefine};[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};${breakIfLine};` //FIXME 如果原return本身有返回值，应该return返回值
+                    statements.splice(insertIndex, 0, `${receiveReturnVarStmt}`)
+                }
+                return 1 //这3条语句在添加到Block前，只视为1条语句
             } else {
                 statements.splice(insertIndex, 0, `[${returns!.map(v => v.getName()).join(',')}] = ${callNewMethodStmt};`)
                 return 1
@@ -372,13 +379,13 @@ export class MethodSplitVisitor implements CodeVisitor {
 
             if (start === end) {
                 //调整后的分割点如果相同，说明没有可分了
-                return
+                return true
             }
             console.log(`--split ${start}-${end}`)
             const extractStmts = statements.splice(start, end - start)
             const [newMethod, subMethodReturns] = this.insertNewMethod(extractStmts, vars, changedVars, midReturns)
             if (!newMethod) {
-                return
+                return false
             }
             // block.removeStatements([start, end-1])  //这个语句有bug，有些情况删除的不是指定行
             const insertCount = this.insertCallMethodStatement(statements, newMethod, start, subMethodReturns, rawReturnTypeText)
