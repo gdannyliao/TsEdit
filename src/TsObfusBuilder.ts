@@ -4,7 +4,7 @@ import { RenameVisitor } from "./TsRename.ts"
 import * as path from "node:path"
 import { RenameMap, RenameMapBuilder } from "./RenameMapBuilder.ts";
 import { CodeScanner } from "./CodeScanner.ts";
-import { MethodSplitVisitor } from "./MethodSplit.ts";
+import { MethodSplitVisitor } from "./methodSplit/MethodSplit.ts";
 
 export class TsObfusBuilder {
     private projectDir: string = ""

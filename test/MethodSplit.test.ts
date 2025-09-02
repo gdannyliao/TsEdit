@@ -1,4 +1,4 @@
-import { MethodSplitVisitor } from "../src/MethodSplit"
+import { MethodSplitVisitor } from "../src/methodSplit/MethodSplit"
 import { ClassDeclaration, MethodDeclaration, Project, SyntaxKind } from 'ts-morph';
 import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
 

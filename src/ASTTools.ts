@@ -1,5 +1,58 @@
 import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression, MethodDeclaration, FunctionDeclaration } from 'ts-morph';
 
+
+export function getDefaultValueByString(type: string | undefined): string {
+    if (type === undefined) {
+        return "undefined"
+    }
+    if (type === "void") {
+        return "undefined"
+    }
+    if (type === "number") {
+        return "0"
+    }
+    if (type === "string") {
+        return "\"\""
+    }
+    if (type === "boolean") {
+        return "false"
+    }
+    if (type === "any") {
+        return "undefined"
+    }
+    if (type === "object") {
+        return "{}"
+    }
+    if (type === "array") {
+        return "[]"
+    }
+    return "undefined"
+}
+export function getDefaultValueByType(type: Type | undefined): string {
+    if (type === undefined) {
+        return "undefined"
+    }
+    if (type.isVoid()) {
+        return "undefined"
+    }
+    if (type.isNumber()) {
+        return "0"
+    }
+    if (type.isString()) {
+        return "\"\""
+    }
+    if (type.isBoolean()) {
+        return "false"
+    }
+    if (type.isArray()) {
+        return "[]"
+    }
+    if (type.isObject()) {
+        return "{}"
+    }
+    return "undefined"
+}
+
 export function isPromiseType(type: Type | undefined): {
     yes: boolean;
     innerTypes?: Type[];
