@@ -20,7 +20,7 @@ test("NormalRename", () => {
     map.setProperty("text", "tt2")
     renames.set("Helloworld", map)
 
-    const scanner = new TsObfusBuilder().setProjectDir(cocosDir).rename(CocosInvokeGraph, renames).build()
+    const scanner = new TsObfusBuilder().setProjectDir(cocosDir).rename( renames, "cocos").build()
     scanner.scan()
     scanner.saveSync(outputDir)
 

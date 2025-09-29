@@ -5,26 +5,32 @@ import * as path from "node:path"
 import { RenameMap, RenameMapBuilder } from "./RenameMapBuilder.ts";
 import { CodeScanner } from "./CodeScanner.ts";
 import { MethodSplitVisitor } from "./methodSplit/MethodSplit.ts";
+import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
+import { EmptyInvokeGraph } from "./EmptyInvokeGraph.ts";
+// import UuidUtils from "./cocos_uuid.js";
+import { UuidUtils } from './UuidUtil.ts';
 
 export class TsObfusBuilder {
+
     private projectDir: string = ""
     private willRename = false
     private willSplitMethod = false
     private keepMap: Map<string, Set<string>> | undefined
     private renameMap: Map<string, RenameMap> | undefined
+    private willResetUUID = false
+    private projectType:string|undefined
 
-    private graphType: (new (projectDir: string, morphProject: Project) => InvokeGraph) | undefined
     setProjectDir(projectDir: string): TsObfusBuilder {
         this.projectDir = projectDir
         return this
     }
 
-    rename(graph: new (projectDir: string, morphProject: Project) => InvokeGraph, renameMap: Map<string, RenameMap>|undefined=undefined): TsObfusBuilder {
+    rename(renameMap: Map<string, RenameMap>|undefined=undefined, projectType: string|undefined=undefined): TsObfusBuilder {
         this.willRename = true
         if (renameMap && renameMap.size > 0) {
             this.renameMap = renameMap
         }
-        this.graphType = graph
+        this.projectType = projectType
         return this
     }
 
@@ -37,18 +43,29 @@ export class TsObfusBuilder {
         this.keepMap = keepMap
         return this
     }
-
+    resetUUID() {
+        this.willResetUUID = true
+    }
     build(): CodeScanner {
         const project = new Project({ tsConfigFilePath: path.join(this.projectDir, "tsconfig.json") });
         project.resolveSourceFileDependencies();
         const scanner = new CodeScanner(project)
 
         if (this.willRename) {
-            if (this.graphType === undefined) {
-                throw new Error("请指定InvokeGraph类型")
+            let invokeGraph:InvokeGraph
+            if (this.projectType === "cocos") {
+                const graph = new CocosInvokeGraph(this.projectDir, project)
+                graph.parse()
+                invokeGraph = graph
+                if (this.willResetUUID) {
+                    const shortIds = graph.getShortIds()
+                    for (const shortId of shortIds) {
+                        graph.setShortId(shortId, UuidUtils.uuid())
+                    }
+                }
+            } else {
+                invokeGraph = new EmptyInvokeGraph()
             }
-            const invokeGraph = new this.graphType(this.projectDir, project)
-            invokeGraph.parse()
 
             scanner.addInvokeGraph(invokeGraph)
             const tsRename = new RenameVisitor(invokeGraph)

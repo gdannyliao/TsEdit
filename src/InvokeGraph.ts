@@ -1,4 +1,6 @@
 import { writeFileSync } from "node:fs"
+// import UuidUtils from "./cocos_uuid.js";
+import { UuidUtils } from './UuidUtil.ts';
 
 export interface InvokeGraph {
     setClassName(className: string, newName: string): void
@@ -62,6 +64,21 @@ export class Invoke {
     changeInvokePointMethod(methodName: string, newName: string) {
         this.invokePoint["handler"] = newName
         this.invokeChanged = true
+    }
+
+    changeInvokePointShortId(oldShortId: string, newShortId: string) {
+        if (this.invokePoint["_componentId"] === oldShortId) {
+            this.invokePoint["_componentId"] = newShortId
+            this.invokeChanged = true
+        } else if (this.invokePoint["__type__"] === oldShortId) {
+            this.invokePoint["__type__"] = newShortId
+            this.invokeChanged = true
+        } else {
+            if (this.invokePoint["__uuid__"] === UuidUtils.decompressUuid(oldShortId)) {
+                this.invokePoint["__uuid__"] = UuidUtils.decompressUuid(newShortId)
+                this.invokeChanged = true
+            }
+        }
     }
 
     save() {

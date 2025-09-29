@@ -1,7 +1,6 @@
 import path from "node:path";
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder.ts";
 import process from "node:process";
@@ -20,6 +19,9 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
   })
   .option('split-method', {
     type: 'boolean', description: '是否将方法拆分成多个函数', alias: 's'
+  })
+  .option('reset-uuid', {
+    type: 'boolean', description: '是否重置所有类的uuid, 仅在cocos项目中生效', alias: 'r'
   })
   .parseSync()
 
@@ -87,11 +89,6 @@ async function parseNameMap(filePath: string): Promise<Map<string, RenameMap>> {
   return result;
 }
 
-if (!isCocosProject(args.project)) {
-  console.error("不是cocos项目")
-  process.exit(1)
-}
-
 
 const obfusBuilder = new TsObfuseBuilder().setProjectDir(args.project)
 if (args['keep']) {
@@ -102,10 +99,14 @@ if (args['keep']) {
   obfusBuilder.setKeepMap(await parseKeepMap(file))
 }
 
-obfusBuilder.rename(CocosInvokeGraph, args['name-map'] ? await parseNameMap(args['name-map']) : undefined)
+obfusBuilder.rename(args['name-map'] ? await parseNameMap(args['name-map']) : undefined, isCocosProject(args.project) ? "cocos" : undefined)
 
 if (args['split-method']) {
   obfusBuilder.splitMethod()
+}
+
+if (args['reset-uuid']) {
+  obfusBuilder.resetUUID()
 }
 
 const scanner = obfusBuilder.build()

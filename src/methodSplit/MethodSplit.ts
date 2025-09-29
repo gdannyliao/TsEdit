@@ -28,7 +28,7 @@ export class MethodSplitVisitor implements CodeVisitor {
 
     private scanVarsAndReturn(statements: (Statement | string)[]
         , start: number = 0, end: number = 0): [number, number, Set<ChangedVal>, Set<ReturnStatement>] {
-
+//FIXME 改成变量声明，也和变量修改一样的处理方式
         const shouldKeep = (isAssign: { yes: boolean, expr: BinaryExpression | undefined }): { yes: boolean, varName: string | undefined } => {
             if (!isAssign.yes || isAssign.expr === undefined)
                 return { yes: false, varName: undefined }

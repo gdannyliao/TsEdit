@@ -45,9 +45,13 @@ var Reg_Dash = /-/g,
             return Reg_CompressedUuid.test(i) || Reg_NormalizedUuid.test(i) || Reg_Uuid.test(i)
         },
         uuid: function () {
-            var i = uuidv4()
-            return UuidUtils.compressUuid(i, !0)
-        }
+            return uuidv4()
+        },
+
+		shortId: function () {
+			return UuidUtils.compressUuid(uuidv4(), false);
+    	}
+
     };
 
 export {UuidUtils}
