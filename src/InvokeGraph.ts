@@ -74,8 +74,12 @@ export class Invoke {
             this.invokePoint["__type__"] = newShortId
             this.invokeChanged = true
         } else {
-            if (this.invokePoint["__uuid__"] === UuidUtils.decompressUuid(oldShortId)) {
+            const uuid = UuidUtils.decompressUuid(oldShortId)
+            if (this.invokePoint["__uuid__"] === uuid) {
                 this.invokePoint["__uuid__"] = UuidUtils.decompressUuid(newShortId)
+                this.invokeChanged = true
+            } else if (this.invokePoint["rawTextureUuid"] === uuid) {
+                this.invokePoint["rawTextureUuid"] = UuidUtils.decompressUuid(newShortId)
                 this.invokeChanged = true
             }
         }

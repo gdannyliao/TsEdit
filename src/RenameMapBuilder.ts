@@ -53,7 +53,7 @@ export class RenameMapBuilder {
     constructor(private project: Project) {
     }
 
-    setKeepMap(keepMap: Map<string, Set<string>>): RenameMapBuilder {
+    setKeepMap(keepMap: Map<string, Set<string>>|undefined): RenameMapBuilder {
         this.keepMap = keepMap
         return this
     }
@@ -101,7 +101,8 @@ export class RenameMapBuilder {
                     return
                 }
 
-                const keepSet = this.keepMap?.get(className)
+                const keepMap = this.keepMap
+                const keepSet = keepMap?.get(className)
 
                 if (keepSet !== undefined && keepSet.size === 0) {
                     console.warn(`保留类${className}`) //如果没有指定哪些属性要保留，则保留整个类所有的属性和类名
@@ -115,6 +116,11 @@ export class RenameMapBuilder {
                     renameMap = new RenameMap(className, random.getString(6, "C_"))
                 }
                 renameMaps.set(className, renameMap);
+
+                if (keepMap !== undefined) {
+                    keepMap.delete(className)
+                    keepMap.set(renameMap.getNewClassName(), keepSet)
+                }
 
                 classDecl.getProperties().forEach(property => {
                     const propertyName = property.getName()
@@ -130,6 +136,10 @@ export class RenameMapBuilder {
                         return
                     }
                     renameMap.setProperty(propertyName, random.getString(6, "p_"))
+                    if (keepSet !== undefined) {
+                        keepSet.delete(propertyName)
+                        keepSet.add(renameMap.getNewProperty(propertyName)!)
+                    }
                 })
 
                 classDecl.getMethods().forEach(method => {
@@ -151,6 +161,10 @@ export class RenameMapBuilder {
                         return
                     }
                     renameMap.setMethod(methodName, random.getString(6, "m_"))
+                    if (keepSet !== undefined) {
+                        keepSet.delete(methodName)
+                        keepSet.add(renameMap.getNewMethod(methodName)!)
+                    }
                 })
             })
         })

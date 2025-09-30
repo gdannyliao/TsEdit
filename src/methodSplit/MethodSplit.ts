@@ -16,10 +16,15 @@ export class MethodSplitVisitor implements CodeVisitor {
     } | undefined
     private hasWillBreakFlag = false
 
+    private keepMap: Map<string, Set<string>> | undefined
+
     constructor(seed: string) {
         this.random = new RandomSeed(seed)
     }
 
+    public setKeepMap(keepMap: Map<string, Set<string>> | undefined) {
+        this.keepMap = keepMap
+    }
     private shouldSplit(statements: (Statement | string)[]): boolean {
         if (statements.length <= 3) return false
         if (isStaticFunc(this.currentMethod)) return false
@@ -96,7 +101,7 @@ export class MethodSplitVisitor implements CodeVisitor {
                             continue
                         }
                         b.getStatements().forEach(stmt => {
-                            switch (stmt.getKind()) {
+                            switch (stmt.getKind()) { //FIXME 如果这里又是if之类的语句，赋值会被忽略
                                 case SyntaxKind.ReturnStatement: {
                                     midReturns.add(stmt.asKind(SyntaxKind.ReturnStatement)!)
                                     break
@@ -264,7 +269,7 @@ export class MethodSplitVisitor implements CodeVisitor {
 
             if (start === end) {
                 //调整后的分割点如果相同，说明没有可分了
-                return true
+                break
             }
             console.log(`--split ${start}-${end}`)
             const extractStmts = statements.splice(start, end - start)
@@ -302,6 +307,9 @@ export class MethodSplitVisitor implements CodeVisitor {
         return false
     }
     visitMethod(cls: ClassDeclaration, method: MethodDeclaration): boolean {
+        if (this.keepMap?.get(cls.getName())?.has(method.getName())) {
+            return false
+        }
         return this.visitMethodInternal(cls, method, undefined)
     }
 

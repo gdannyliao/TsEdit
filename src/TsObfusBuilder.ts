@@ -71,13 +71,15 @@ export class TsObfusBuilder {
             const tsRename = new RenameVisitor(invokeGraph)
 
             scanner.addVisitor(tsRename)
-            const [renameMaps, sdkClasses] = new RenameMapBuilder(project).specifyNames(this.renameMap).setKeepMap(this.keepMap ?? new Map()).build(this.projectDir)
+            const [renameMaps, sdkClasses] = new RenameMapBuilder(project).specifyNames(this.renameMap).setKeepMap(this.keepMap).build(this.projectDir)
             tsRename.setRenameMap(renameMaps)
             tsRename.setSdkClasses(sdkClasses)
         }
 
         if (this.willSplitMethod) {
-            scanner.addVisitor(new MethodSplitVisitor(this.projectDir))
+            const methodSplitVisitor = new MethodSplitVisitor(this.projectDir)
+            methodSplitVisitor.setKeepMap(this.keepMap)
+            scanner.addVisitor(methodSplitVisitor)
         }
 
         return scanner

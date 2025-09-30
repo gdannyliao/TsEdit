@@ -114,7 +114,13 @@ function toTypeText(type: Type | undefined): string {
     if (type.isLiteral()) {
         return type.getBaseTypeOfLiteralType().getText()
     }
-    return type.getText()
+    const typeText = type.getText();
+    if (typeText.startsWith("import(")) {
+        //有这种情况：'import("/Users/jkl/workspace/game/captain/assets/Kingdom/script/SlotMachineModel").WinResult'
+        const endIndex = typeText.indexOf(".")
+        return typeText.substring(endIndex+1)
+    }
+    return typeText
 }
 
 function isAssignmentStatement(statement: Statement): { yes: boolean, expr: BinaryExpression | undefined } {

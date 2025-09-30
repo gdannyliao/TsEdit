@@ -21,6 +21,9 @@ class MetaFile {
         this.data = data
     }
 
+    getFilePath(): string {
+        return this.filePath
+    }
     getFileName(): string {
         return this.fileName
     }
@@ -243,17 +246,16 @@ export class CocosInvokeGraph implements InvokeGraph {
         return classDecl
     }
 
-    private handleJson(json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
-        const recordShortId = (shortId: string) => {
-            if (this.shortId2file.has(shortId)) {
-                if (this.shortIdInvokes.has(shortId)) {
-                    this.shortIdInvokes.get(shortId)!.push(new Invoke(file, fileContent, json))
-                } else {
-                    this.shortIdInvokes.set(shortId, [new Invoke(file, fileContent, json)])
-                }
+    private recordShortId(shortId: string, json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
+        if (this.shortId2file.has(shortId)) {
+            if (this.shortIdInvokes.has(shortId)) {
+                this.shortIdInvokes.get(shortId)!.push(new Invoke(file, fileContent, json))
+            } else {
+                this.shortIdInvokes.set(shortId, [new Invoke(file, fileContent, json)])
             }
         }
-
+    }
+    private handleJson(json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
 
         for (const k in json) {
             if (isRecord(json[k])) {
@@ -267,7 +269,7 @@ export class CocosInvokeGraph implements InvokeGraph {
                 })
             } else if ("_componentId" === k) { //处理方法引用
                 const shortId = json._componentId
-                recordShortId(shortId)
+                this.recordShortId(shortId, json, file, fileContent)
                 const classDecl = this.getDefaultExportClassByShortId(shortId)
                 if (classDecl !== undefined) {
                     const method = this.getMethod(classDecl, json.handler)
@@ -277,7 +279,7 @@ export class CocosInvokeGraph implements InvokeGraph {
                 }
             } else if ("__type__" === k) { //处理变量引用
                 const shortId = json.__type__
-                recordShortId(shortId)
+                this.recordShortId(shortId, json, file, fileContent)
                 const classDecl = this.getDefaultExportClassByShortId(shortId)
                 if (classDecl !== undefined) {
                     const properties = classDecl.getProperties()
@@ -292,7 +294,10 @@ export class CocosInvokeGraph implements InvokeGraph {
                 }
             } else if ("__uuid__" === k) {
                 const shortId = UuidUtils.compressUuid(json.__uuid__, false)
-                recordShortId(shortId)
+                this.recordShortId(shortId, json, file, fileContent)
+            } else if ("rawTextureUuid" === k) {
+                const shortId = UuidUtils.compressUuid(json.rawTextureUuid, false)
+                this.recordShortId(shortId, json, file, fileContent)
             }
         }
     }
@@ -322,6 +327,17 @@ export class CocosInvokeGraph implements InvokeGraph {
                 })
             } else if (json !== null && typeof json === 'object') {
                 this.handleJson(json, file, json)
+            }
+        })
+
+        this.shortId2file.forEach((file, shortId) => {
+            const data = file.getData()
+            if (Array.isArray(data)) {
+                data.forEach(j => {
+                    this.handleJson(j, file.getFilePath(), data)
+                })
+            } else if (data !== null && typeof data === 'object') {
+                this.handleJson(data, file.getFilePath(), data)
             }
         })
     }
