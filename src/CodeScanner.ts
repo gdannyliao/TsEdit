@@ -29,6 +29,11 @@ export class CodeScanner {
             if (file.getFilePath().endsWith(".d.ts")) {
                 return
             }
+            this.visitors.forEach(visitor => {
+                if (visitor.visitFile?.(file)) {
+                    this.changedFiles.add(file)
+                }
+            })
             file.getClasses().forEach(cls => {
                 let fileChanged = false
                 const relatedFiles = new Set<SourceFile>()

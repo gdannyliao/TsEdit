@@ -4,11 +4,11 @@ import { RenameVisitor } from "./TsRename.ts"
 import * as path from "node:path"
 import { RenameMap, RenameMapBuilder } from "./RenameMapBuilder.ts";
 import { CodeScanner } from "./CodeScanner.ts";
-import { MethodSplitVisitor } from "./methodSplit/MethodSplit.ts";
 import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
 import { EmptyInvokeGraph } from "./EmptyInvokeGraph.ts";
 // import UuidUtils from "./cocos_uuid.js";
 import { UuidUtils } from './UuidUtil.ts';
+import { MethodSplitVisitor2 } from "./methodSplit/MethodSplit2.ts";
 
 export class TsObfusBuilder {
 
@@ -77,7 +77,7 @@ export class TsObfusBuilder {
         }
 
         if (this.willSplitMethod) {
-            const methodSplitVisitor = new MethodSplitVisitor(this.projectDir)
+            const methodSplitVisitor = new MethodSplitVisitor2(this.projectDir)
             methodSplitVisitor.setKeepMap(this.keepMap)
             scanner.addVisitor(methodSplitVisitor)
         }

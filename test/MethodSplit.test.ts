@@ -1,5 +1,5 @@
-import { MethodSplitVisitor } from "../src/methodSplit/MethodSplit"
-import { ClassDeclaration, MethodDeclaration, Project, SyntaxKind } from 'ts-morph';
+import { MethodSplitVisitor2 } from "../src/methodSplit/MethodSplit2"
+import { ClassDeclaration, MethodDeclaration, Project, SourceFile, SyntaxKind } from 'ts-morph';
 import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
 
 
@@ -13,19 +13,23 @@ beforeEach(() => {
 })
 
 function getMethod(project: Project, clsName: string, methodName: string):[ClassDeclaration|undefined, MethodDeclaration|undefined] {
+    const [sourceFile, classDecl, method] = getFileMethod(project, clsName, methodName)
+    return [classDecl, method]
+}
+function getFileMethod(project: Project, clsName: string, methodName: string):[SourceFile|undefined, ClassDeclaration|undefined, MethodDeclaration|undefined] {
     const sourceFile = project.getSourceFile(`${splitDir}/SplitMethodSample.ts`)
     if (!sourceFile) {
-        return [undefined, undefined]
+        return [undefined, undefined, undefined]
     }
     const classDecl = sourceFile.getClass(clsName)
     if (!classDecl) {
-        return [undefined, undefined]
+        return [undefined, undefined, undefined]
     }
     const method = classDecl.getMethod(methodName)
     if (!method) {
-        return [undefined, undefined]
+        return [undefined, undefined, undefined]
     }
-    return [classDecl, method]
+    return [sourceFile, classDecl, method]
 }
 
 function saveSync(project: Project, outputDir?: string) {
@@ -43,7 +47,7 @@ function saveSync(project: Project, outputDir?: string) {
 test('MethodSplitWithParam', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('123')
+    const methodSplit = new MethodSplitVisitor2('1')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withParam")!)
     saveSync(project, outputDir)
@@ -57,24 +61,29 @@ test('MethodSplitWithParam', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withParam")!
     const statements = method.getStatements()
-    expect(statements.length === 1)
-    const exprStmt = statements[0].asKind(SyntaxKind.ExpressionStatement)!
-    const callExpr = exprStmt.getExpression().asKind(SyntaxKind.CallExpression)!
-    const propExpr = callExpr.getExpression().asKind(SyntaxKind.PropertyAccessExpression)!
-    const subMethodName = propExpr.getName()
-    const subMethod = cls.getMethod(subMethodName)!
-    expect(subMethod.getParameter("text")).toBeDefined()
+    expect(statements.length).toBe(6)
+    let exprStmt = statements[2].asKind(SyntaxKind.ExpressionStatement)!
+    let callExpr = exprStmt.getExpression().asKind(SyntaxKind.CallExpression)!
+    let propExpr = callExpr.getExpression().asKind(SyntaxKind.PropertyAccessExpression)!
+    let subMethodName = propExpr.getName()
+    let subMethod = cls.getMethod(subMethodName)!
     expect(subMethod.getParameters().length).toBe(1)
-    expect(subMethod.getReturnType().isTuple()).toBe(true)
-    expect(subMethod.getReturnType().getText()).toBe("[]")
+    expect(subMethod.getParameters()[0].getName()).toBe("text")
+
+    exprStmt = statements[5].asKind(SyntaxKind.ExpressionStatement)!
+    callExpr = exprStmt.getExpression().asKind(SyntaxKind.CallExpression)!
+    propExpr = callExpr.getExpression().asKind(SyntaxKind.PropertyAccessExpression)!
+    subMethodName = propExpr.getName()
+    subMethod = cls.getMethod(subMethodName)!
+    expect(subMethod.getParameters().length).toBe(0)
 })
 
 test('MethodSplitWithConst', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
-    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withConst")!, [2, -1])
+    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withConst")!, [2, 5])
     saveSync(project, outputDir)
 
     const outputProject = new Project()
@@ -86,14 +95,36 @@ test('MethodSplitWithConst', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withConst")!
     const statements = method.getStatements()
-    expect(statements.length === 3)
-    expect(statements[2].getText()).toBe("this.z_TZ98WFiybj(constText)")
+    expect(statements.length).toBe(8)
+    expect(statements[2].getText()).toBe("this.z_TZ98WFiybj(constText);")
+})
+
+test('MethodSplitIncludeConst', () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplitVisitor2('1234')
+    // @ts-ignore
+    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withConst")!, [1, 5])
+    saveSync(project, outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+
+    const sourceFile = outputProject.getSourceFile(`${outputDir}/SplitMethodSample.ts`)
+    const cls = sourceFile!.getClass("SplitMethodSample")!
+    const method = cls.getMethod("withConst")!
+    const statements = method.getStatements()
+    expect(statements.length).toBe(8)
+    expect(statements[1].getText()).toBe("let constText:string;")
+    expect(statements[2].getText()).toBe("[constText] = this.z_TZ98WFiybj();")
 })
 
 test('MethodSplitWithReturn', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('123')
+    const methodSplit = new MethodSplitVisitor2('123')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withReturn")!, [4, -1])
     saveSync(project, outputDir)
@@ -108,15 +139,39 @@ test('MethodSplitWithReturn', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withReturn")!
     const statements = method.getStatements()
-    expect(statements.length === 6)
-    expect(statements[4].getText()).toBe("this.z_5WBm4a3nk7()")
+    expect(statements.length).toBe(5)
+    expect(statements[3].getText()).toBe(`console.log("line4")`)
+    expect(statements[4].getText()).toBe(`return this.z_5WBm4a3nk7()`)
+})
+
+
+test('MethodSplitWithReturn2', () => {
+    const project = new Project()
+    project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
+    const methodSplit = new MethodSplitVisitor2('123')
+    // @ts-ignore
+    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withReturn")!, [4, 8])
+    saveSync(project, outputDir)
+
+    const outputProject = new Project()
+    outputProject.addSourceFileAtPath(`${outputDir}/SplitMethodSample.ts`)
+    const diagnostics = outputProject.getPreEmitDiagnostics()
+    expect(diagnostics.length).toBe(0)
+
+
+    const sourceFile = outputProject.getSourceFile(`${outputDir}/SplitMethodSample.ts`)
+    const cls = sourceFile!.getClass("SplitMethodSample")!
+    const method = cls.getMethod("withReturn")!
+    const statements = method.getStatements()
+    expect(statements.length).toBe(6)
+    expect(statements[4].getText()).toBe(`this.z_5WBm4a3nk7();`)
     expect(statements[5].getText()).toBe(`return "returnText"`)
 })
 
 test('MethodSplitWithIf', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withIf")!, [2, 4])
     saveSync(project, outputDir)
@@ -131,14 +186,14 @@ test('MethodSplitWithIf', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIf")!
     const statements = method.getStatements()
-    expect(statements[2].getText()).toBe("this.z_TZ98WFiybj(text)")
+    expect(statements[2].getText()).toBe("this.z_TZ98WFiybj(text);")
 })
 
 
 test('MethodSplitWithVar', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withVar")!, [4, 6])
     saveSync(project, outputDir)
@@ -160,9 +215,11 @@ test('MethodSplitWithVar', () => {
 test('MethodSplitWithIfReturn', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
+    let [sourceFile, cls, method] = getFileMethod(project, "SplitMethodSample", "withIfReturn")!
+    methodSplit.visitFile(sourceFile)
     // @ts-ignore
-    methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withIfReturn")!, [3, 6])
+    methodSplit.visitMethodInternal(cls, method, [3, 6])
     saveSync(project, outputDir)
 
     const outputProject = new Project()
@@ -170,14 +227,14 @@ test('MethodSplitWithIfReturn', () => {
     const diagnostics = outputProject.getPreEmitDiagnostics()
     expect(diagnostics.length).toBe(0)
 
-    const sourceFile = outputProject.getSourceFile(`${outputDir}/SplitMethodSample.ts`)
-    const cls = sourceFile!.getClass("SplitMethodSample")!
-    const method = cls.getMethod("withIfReturn")!
+    sourceFile = outputProject.getSourceFile(`${outputDir}/SplitMethodSample.ts`)
+    cls = sourceFile!.getClass("SplitMethodSample")!
+    method = cls.getMethod("withIfReturn")!
     const statements = method.getStatements()
-    expect(statements[3].getText()).toBe("let w_b_ = false;")
-    expect(statements[4].getText()).toBe("[w_b_] = this.z_TZ98WFiybj(text);")
+    expect(statements[3].getText()).toBe("let w_b_0:boolean;")
+    expect(statements[4].getText()).toBe("[w_b_0] = this.z_n6oYp7WOYI(text);")
 
-    const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
+    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
     expect(subMethod[1].getText().includes("return [true]")).toBe(true)
     expect(subMethod[3].getText()).toBe("return [false]")
 })
@@ -185,7 +242,7 @@ test('MethodSplitWithIfReturn', () => {
 test('MethodSplitwithIfReturnHasValue', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withIfReturnHasValue")!, [3, 7])
     saveSync(project, outputDir)
@@ -200,10 +257,10 @@ test('MethodSplitwithIfReturnHasValue', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIfReturnHasValue")!
     const statements = method.getStatements()
-    expect(statements[3].getText()).toBe(`let w_b_ = false,r_t_ = "";`)
-    expect(statements[4].getText()).toBe("[w_b_,r_t_] = this.z_TZ98WFiybj(text);")
+    expect(statements[3].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
+    expect(statements[4].getText()).toBe("[w_b_0,r_t_1] = this.z_n6oYp7WOYI(text);")
 
-    const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
+    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
     expect(subMethod[1].getText().includes(`return [true,"return1"]`)).toBe(true)
     expect(subMethod[4].getText()).toBe(`return [false,""]`)
 })
@@ -211,7 +268,7 @@ test('MethodSplitwithIfReturnHasValue', () => {
 test('withIfReturnAndVarChange', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withIfReturnAndVarChange")!, [4, 7])
     // @ts-ignore
@@ -227,10 +284,10 @@ test('withIfReturnAndVarChange', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withIfReturnAndVarChange")!
     const statements = method.getStatements()
-    expect(statements[4].getText()).toBe(`let w_b_ = false,r_t_ = "";`)
-    expect(statements[5].getText()).toBe("[w_b_,var1,r_t_] = this.z_TZ98WFiybj(text,var1);")
+    expect(statements[4].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
+    expect(statements[5].getText()).toBe("[w_b_0,var1,r_t_1] = this.z_n6oYp7WOYI(var1,text);")
 
-    const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
+    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
     expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)
     expect(subMethod[3].getText()).toBe(`return [false,var1,""]`)
 })
@@ -238,7 +295,7 @@ test('withIfReturnAndVarChange', () => {
 test('withAsyncIfReturnAndVarChange', () => {
     const project = new Project()
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
-    const methodSplit = new MethodSplitVisitor('1234')
+    const methodSplit = new MethodSplitVisitor2('1234')
     // @ts-ignore
     methodSplit.visitMethodInternal(...getMethod(project, "SplitMethodSample", "withAsyncIfReturnAndVarChange")!, [4, 7])
     // @ts-ignore
@@ -254,10 +311,10 @@ test('withAsyncIfReturnAndVarChange', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withAsyncIfReturnAndVarChange")!
     const statements = method.getStatements()
-    expect(statements[4].getText()).toBe("let w_b_ = false,r_t_0 = \"\";")
-    expect(statements[5].getText()).toBe("[w_b_,var1,r_t_0] = await this.z_TZ98WFiybj(text,var1);")
+    expect(statements[4].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
+    expect(statements[5].getText()).toBe(`[w_b_0,var1,r_t_1] = await this.z_n6oYp7WOYI(var1,text);`)
 
-    const subMethod = cls.getMethod("z_TZ98WFiybj")!.getStatements()
+    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
     expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)
     expect(subMethod[3].getText()).toBe(`return [false,var1,""]`)
 })

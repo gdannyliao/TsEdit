@@ -106,7 +106,7 @@ export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | u
     return hasStaticModifier;
 }
 
-function toTypeText(type: Type | undefined): string {
+export function toTypeText(type: Type | undefined): string {
     if (type === undefined) {
         return "void"
     }
@@ -123,9 +123,9 @@ function toTypeText(type: Type | undefined): string {
     return typeText
 }
 
-function isAssignmentStatement(statement: Statement): { yes: boolean, expr: BinaryExpression | undefined } {
+export function isAssignmentStatement(statement: Statement): BinaryExpression | undefined {
     if (statement.getKind() !== SyntaxKind.ExpressionStatement) {
-        return { yes: false, expr: undefined };
+        return undefined;
     }
 
     const exprStmt = statement.asKind(SyntaxKind.ExpressionStatement)!;
@@ -151,10 +151,13 @@ function isAssignmentStatement(statement: Statement): { yes: boolean, expr: Bina
             SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken // >>>=
         ];
 
-        return { yes: assignmentOperators.includes(operatorKind), expr: binaryExpr };
+        if (assignmentOperators.includes(operatorKind)) {
+            return binaryExpr
+        }
+        return undefined
     }
 
-    return { yes: false, expr: undefined };
+    return undefined;
 }
 
 export class Block {
@@ -293,10 +296,6 @@ export function getBlock(stmt: Statement): Block[] {
  * @param stmt 要检查的语句
  * @returns 如果语句包含块则返回true
  */
-function hasBlock(stmt: Statement): boolean {
+export function hasBlock(stmt: Statement): boolean {
     return getBlock(stmt) !== undefined;
 }
-
-export {
-    hasBlock, toTypeText, isAssignmentStatement
-};
