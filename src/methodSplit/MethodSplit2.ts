@@ -2,7 +2,6 @@ import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind,
 import { CodeVisitor } from "../CodeScanner.ts";
 
 import { RandomSeed } from "../random.ts";
-import { NewReturnVal } from "./MethodSplitModels.ts";
 import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByType, getDefaultValueByString, isAssignmentStatement } from "../ASTTools.ts";
 import { buildScope, findMinScope, rebuildScope, Scope, Variable } from "./Scopes.ts";
 

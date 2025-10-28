@@ -105,15 +105,20 @@ export class RenameMapBuilder {
                 const keepSet = keepMap?.get(className)
 
                 if (keepSet !== undefined && keepSet.size === 0) {
-                    console.warn(`保留类${className}`) //如果没有指定哪些属性要保留，则保留整个类所有的属性和类名
+                    console.warn(`保留类名和它所有属性方法名${className}`) //如果没有指定哪些属性要保留，则保留整个类所有的属性和类名
                     return
                 }
-
+                
                 let renameMap: RenameMap
                 if (this.specifiedNames !== undefined && this.specifiedNames.has(className)) {
                     renameMap = this.specifiedNames.get(className)!
                 } else {
-                    renameMap = new RenameMap(className, random.getString(6, "C_"))
+                    if (keepSet !== undefined && keepSet.size === 1 && keepSet.has(className)) {
+                        renameMap = new RenameMap(className, className)
+                        console.warn(`保留类名${className}`)
+                    } else {
+                        renameMap = new RenameMap(className, random.getString(6, "C_"))
+                    }
                 }
                 renameMaps.set(className, renameMap);
 

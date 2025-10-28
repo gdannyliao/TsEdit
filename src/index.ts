@@ -51,7 +51,9 @@ async function parseKeepMap(filePath: string): Promise<Map<string, Set<string>>>
   let className: string | undefined = undefined;
 
   for (const line of lines) {
-    if (line.startsWith('-')) {
+    if (line === "--") {
+      result.get(className!)!.add(className); //-- 表示保留类名
+    }else if (line.startsWith('-')) {
       const propertyName = line.substring(1); // 去掉 `-`
       result.get(className!)!.add(propertyName);
     } else {

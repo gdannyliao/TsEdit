@@ -27,6 +27,9 @@ export class RenameVisitor implements CodeVisitor {
         if (!classMap) {
             return false
         }
+        if (classMap.getNewClassName() === className) {
+            return true
+        }
         console.log("rename class", className, classMap.getNewClassName())
         cls.rename(classMap.getNewClassName()!)
         this.renameMap.set(classMap.getNewClassName(), classMap)
