@@ -1,4 +1,4 @@
-import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind, BinaryExpression, ParameterDeclarationStructure, StructureKind, ReturnStatement, SourceFile } from "ts-morph"
+import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind, BinaryExpression, ParameterDeclarationStructure, StructureKind, ReturnStatement, SourceFile, BreakStatement, ContinueStatement } from "ts-morph"
 import { CodeVisitor } from "../CodeScanner.ts";
 
 import { RandomSeed } from "../random.ts";
@@ -10,7 +10,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     private currentCls: ClassDeclaration | undefined
     private currentMethod: MethodDeclaration | undefined
     private returnType: Type | undefined
-    private isPromiseRt: {
+    private isAsyncFunc: {
         yes: boolean;
         innerTypes?: Type[];
     } | undefined
@@ -51,65 +51,94 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         console.log("line5")
         return [false, 0, ""] //lastReturns
     }
-     * @param returnInSplit  切分出来的返回语句，由于最后一句代码为返回语句的情况特殊处理了，所以这里只包含中间的返回语句
+     * @param jumpStmts  切分出来的跳跃语句，由于最后一句代码为返回语句的情况特殊处理了，所以这里只包含中间的返回语句，或者继续语句、跳出语句
      * @param changedVars  切分出来的方法中改变的变量
      * @param spilledVars  切分出来的方法中，作用域外溢的变量
-     * @returns receiveVars: 调用新方法后接收变量的列表。lastReturns: 新方法最后一句返回语句中的变量列表。returnTypes: 新方法的返回类型列表。ifBreakLineReturns: 如果有ifBreakLine，返回语句中的变量列表。newDeclareVars: 原方法需要额外声明的变量。willBreakVarName: 是否有中间返回
+     * @returns receiveVars: 调用新方法后接收变量的列表。lastReturns: 新方法最后一句返回语句中的变量列表。returnTypes: 新方法的返回类型列表。ifBreakLine: 如果有ifBreakLine，返回语句中的变量列表。newDeclareVars: 原方法需要额外声明的变量。willBreakVarName: 是否有中间返回
      */
-    private prepareCodes(returnInSplit: Set<ReturnStatement>, changedVars: Set<Variable>, spilledVars: Set<Variable>): { receiveVars: string[], lastReturns: string[], returnTypes: string[], ifBreakLineReturns: string[], newDeclareVars: string[], willBreakVarName: string | undefined } {
+    private prepareCodes(jumpStmts: Array<ReturnStatement | ContinueStatement | BreakStatement>, changedVars: Set<Variable>, spilledVars: Set<Variable>): { receiveVars: string[], lastReturns: string[], returnTypes: string[], ifBreakLine: string[], newDeclareVars: string[], willBreakVars: { name: string, type: number }[] } {
         const lastReturns: string[] = []
-        const midReturns: string[] = []
+        const midReturns: Variable[] = []
         const returnTypes: string[] = []
         const newDeclareVars: string[] = []
-        const ifBreakLineReturns: string[] = []
+        const ifBreakLine: string[] = []
         const receiveVars: string[] = []
-        let willBreakVarName: string | undefined = undefined
-        if (returnInSplit.size > 0) {
-            willBreakVarName = `w_b_${this.getTempVarIdx()}`
+        const willBreakVars: { name: string, type: number }[] = []
+        const originReturns: ReturnStatement[] = []
+
+        jumpStmts.forEach(jmp => {
+            const willBreakVarName = `w_b_${this.getTempVarIdx()}`
             receiveVars.push(willBreakVarName)
             lastReturns.push("false")
-            midReturns.push("true")
             returnTypes.push("boolean")
             newDeclareVars.push(`${willBreakVarName}:boolean`)
-        }
-
+            willBreakVars.push({ name: willBreakVarName, type: jmp.getKind() })
+            if (jmp instanceof ReturnStatement) {
+                originReturns.push(jmp)
+            }
+        })
         changedVars.forEach(v => {
             receiveVars.push(v.getName())
             lastReturns.push(v.getName())
-            midReturns.push(v.getName())
+            midReturns.push(v)
             returnTypes.push((v.getType()))
         })
 
         spilledVars.forEach(v => {
             receiveVars.push(v.getName())
             lastReturns.push(v.getName())
-            midReturns.push(v.getName())
+            midReturns.push(v)
             returnTypes.push((v.getType()))
             newDeclareVars.push(`${v.getName()}:${v.getType()}`)
-            ifBreakLineReturns.push(v.getName())
         })
 
-        returnInSplit.forEach(rt => {
-            //有插入的变量，需要修改原有的返回语句
-            const oldReturn = rt.getExpression()?.getText()
-            if (oldReturn) {
-                rt.replaceWithText(`return [${midReturns.join(',')},${oldReturn}]`)
-            } else {
-                rt.replaceWithText(`return [${midReturns.join(',')}]`)
+        for (let i = 0; i < jumpStmts.length; i++) {
+            const jmp = jumpStmts[i]
+
+            const newReturnValues: string[] = []
+            for (let j = 0; j < willBreakVars.length; j++) {
+                if (j === i) {
+                    newReturnValues.push("true")
+                } else {
+                    newReturnValues.push("false")
+                }
             }
-        })
 
-        if (!this.returnType?.isVoid() && returnInSplit.size > 0) {
+            for (const v of midReturns) {
+                if (v.getStartLine() <= jmp.getStartLineNumber()) {
+                    newReturnValues.push(v.getName())
+                } else {
+                    newReturnValues.push(getDefaultValueByString(v.getType()))
+                }
+            }
+
+            let oldReturn: string | undefined = undefined
+            if (jmp instanceof ReturnStatement) {
+                //有插入的变量，需要修改原有的返回语句
+                oldReturn = jmp.getExpression()?.getText()
+            }
+
+            if (oldReturn) {
+                jumpStmts[i] = jmp.replaceWithText(`return [${newReturnValues.join(',')},${oldReturn}]`) as ReturnStatement
+            } else {
+                jumpStmts[i] = jmp.replaceWithText(`return [${newReturnValues.join(',')}]`) as ReturnStatement
+            }
+        }
+
+        if (!this.returnType?.isVoid() && originReturns.length > 0) {
             //有非空中间返回又有原始返回时，才需要用r_t_传递原始返回值
-            if (this.isPromiseRt?.yes) {
-                for (let i = 0; i < this.isPromiseRt.innerTypes!.length; i++) {
+            if (this.isAsyncFunc?.yes) {
+                for (let i = 0; i < this.isAsyncFunc.innerTypes!.length; i++) {
+                    if (this.isAsyncFunc.innerTypes![i].isVoid()) {
+                        continue
+                    }
                     const rtName = `r_t_${this.getTempVarIdx()}`
-                    const defaultValue = getDefaultValueByType(this.isPromiseRt.innerTypes![i])
+                    const defaultValue = getDefaultValueByType(this.isAsyncFunc.innerTypes![i])
                     lastReturns.push(defaultValue)
                     receiveVars.push(rtName)
-                    returnTypes.push(toTypeText(this.isPromiseRt.innerTypes![i]))
+                    returnTypes.push(toTypeText(this.isAsyncFunc.innerTypes![i]))
                     newDeclareVars.push(`${rtName} = ${defaultValue}`)
-                    ifBreakLineReturns.push(rtName)
+                    ifBreakLine.push(rtName)
                 }
             } else {
                 const rtName = `r_t_${this.getTempVarIdx()}`
@@ -118,11 +147,11 @@ export class MethodSplitVisitor2 implements CodeVisitor {
                 receiveVars.push(rtName)
                 returnTypes.push(toTypeText(this.returnType))
                 newDeclareVars.push(`${rtName} = ${defaultValue}`)
-                ifBreakLineReturns.push(rtName)
+                ifBreakLine.push(rtName)
             }
         }
 
-        return { receiveVars, lastReturns, returnTypes, ifBreakLineReturns, newDeclareVars, willBreakVarName }
+        return { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars }
     }
 
     private gatherParams(invokedVars: Set<Variable>): { newMethodParams: ParameterDeclarationStructure[], newMtdCallParams: string[] } {
@@ -157,41 +186,75 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         if (!this.currentCls || !this.currentMethod) {
             return
         }
-        const { invokedVars, spilledVars, changedVars, returnStmts } = scope.collectDataIn(splitStmts[0].getStartLineNumber(), splitStmts[splitStmts.length - 1].getEndLineNumber())
+
+        const lastStmt = splitStmts[splitStmts.length - 1]
+        let lastStmtIsJumpStmt = false
+        const { invokedVars, spilledVars, changedVars, jumpStmts } = scope.collectDataIn(splitStmts[0].getStartLineNumber(), lastStmt.getEndLineNumber())
+
+        const stmtPosition = new Map<number, number>()
+        for (let i = 0; i < jumpStmts.length; i++) {
+            if (jumpStmts[i] === lastStmt) {
+                lastStmtIsJumpStmt = true
+            }
+            for (let j = 0; j < splitStmts.length; j++) {
+                if (splitStmts[j] === jumpStmts[i]) {
+                    stmtPosition.set(i, j)
+                    break
+                }
+            }
+        }
+
+
         const { newMethodParams, newMtdCallParams } = this.gatherParams(invokedVars)
-        const { receiveVars, lastReturns, returnTypes, ifBreakLineReturns, newDeclareVars, willBreakVarName } = this.prepareCodes(returnStmts, changedVars, spilledVars)
+        const { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars } = this.prepareCodes(jumpStmts, changedVars, spilledVars)
+
+        for (let i = 0; i < jumpStmts.length; i++) {
+            const pos = stmtPosition.get(i)
+            if (pos !== undefined) {
+                splitStmts[pos] = jumpStmts[i]
+            }
+        }
 
         const newStatements = splitStmts.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
-        newStatements.push(`return [${lastReturns.join(',')}]`)
-        const returnType = this.isPromiseRt?.yes ? `Promise<[${returnTypes.join(',')}]>` : `[${returnTypes.join(',')}]`
-
-        const newMethod = this.currentCls.addMethod({
-            name: `z_${this.random.getString(10)}`,
-            parameters: newMethodParams,
-            statements: newStatements,
-            returnType: returnType,
-            isAsync: this.isPromiseRt?.yes
-        })
-
-        let callNewMethodStmt = `this.${newMethod.getName()}(${newMtdCallParams.join(',')})`
-        if (this.isPromiseRt?.yes) {
+        const newMethodName = `z_${this.random.getString(10)}`
+        let callNewMethodStmt = `this.${newMethodName}(${newMtdCallParams.join(',')})`
+        if (this.isAsyncFunc?.yes) {
             callNewMethodStmt = `await ${callNewMethodStmt}`
         }
 
-        if (lastReturns.length === 0) {
-            stmts.splice(insertIdx, 0, `${callNewMethodStmt};`)
-            return { hasWillBreakFlag: false }
-        }
+        let returnType: string | undefined = undefined
+        if (returnTypes.length > 0) {
+            if (!lastStmtIsJumpStmt) {
+                newStatements.push(`return [${lastReturns.join(',')}]`)
+            }
+            returnType = this.isAsyncFunc?.yes ? `Promise<[${returnTypes.join(',')}]>` : `[${returnTypes.join(',')}]`
 
-        if (willBreakVarName) {
-            const ifBreakLine = `if (${willBreakVarName}) {return ${ifBreakLineReturns.join(',')}}`
-            const receiveReturnVarLine = `${this.toDeclareLine(newDeclareVars)}[${receiveVars.join(',')}] = ${callNewMethodStmt};${ifBreakLine};`
+            let receiveReturnVarLine = `${this.toDeclareLine(newDeclareVars)}[${receiveVars.join(',')}] = ${callNewMethodStmt};`
+            for (const v of willBreakVars) {
+                switch (v.type) {
+                    case SyntaxKind.ReturnStatement:
+                        receiveReturnVarLine += `if (${v.name}) {return ${ifBreakLine.join(',')}};`
+                        break
+                    case SyntaxKind.BreakStatement:
+                        receiveReturnVarLine += `if (${v.name}) {break};`
+                        break
+                    case SyntaxKind.ContinueStatement:
+                        receiveReturnVarLine += `if (${v.name}) {continue};`
+                        break
+                }
+            }
             stmts.splice(insertIdx, 0, receiveReturnVarLine)
-
         } else {
-            const receiveReturnVarLine = `${this.toDeclareLine(newDeclareVars)}[${receiveVars.join(',')}] = ${callNewMethodStmt};`
-            stmts.splice(insertIdx, 0, receiveReturnVarLine)
+            stmts.splice(insertIdx, 0, `${callNewMethodStmt};`)
         }
+
+        this.currentCls.addMethod({
+            name: newMethodName,
+            parameters: newMethodParams,
+            statements: newStatements,
+            returnType: returnType,
+            isAsync: this.isAsyncFunc?.yes
+        })
     }
 
     private tempVarIdx = 0
@@ -223,11 +286,11 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             parameters: newMethodParams,
             statements: newStatements,
             returnType: this.returnType.getText(),
-            isAsync: this.isPromiseRt?.yes
+            isAsync: this.isAsyncFunc?.yes
         })
 
         let callNewMethodStmt = `this.${newMethod.getName()}(${newMtdCallParams.join(',')})`
-        if (this.isPromiseRt?.yes) {
+        if (this.isAsyncFunc?.yes) {
             callNewMethodStmt = `return await ${callNewMethodStmt}`
         } else {
             callNewMethodStmt = `return ${callNewMethodStmt}`
@@ -284,12 +347,14 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     private deepSplit(scope: Scope, range: ([number, number] | undefined) = undefined): Scope {
-        const children = scope.getChildren()
+        const newScope = this.split(scope, range) //FIXME 从这里切分出去的大块语句（含代码块的语句），不会再被切分。
+
+        const children = newScope.getChildren()
         for (let i = children.length - 1; i >= 0; i--) { //较小的作用域排在后面，所以从较小的作用域开始处理
             this.deepSplit(children[i])
         }
 
-        return this.split(scope, range)
+        return newScope
     }
 
     private splitMethod(method: MethodDeclaration, range: [number, number] | undefined): boolean {
@@ -307,7 +372,12 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         this.currentCls = cls
         this.currentMethod = method
         this.returnType = method.getReturnType()
-        this.isPromiseRt = isPromiseType(method.getReturnType())
+        this.isAsyncFunc = undefined
+        method.getModifiers().forEach(m => {
+            if (m.getKind() === SyntaxKind.AsyncKeyword) {
+                this.isAsyncFunc = isPromiseType(method.getReturnType())
+            }
+        })
         return this.splitMethod(method, range)
     }
 

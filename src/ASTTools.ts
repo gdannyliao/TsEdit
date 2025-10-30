@@ -21,7 +21,7 @@ export function getDefaultValueByString(type: string | undefined): string {
         return "undefined"
     }
     if (type === "object") {
-        return "{}"
+        return "undefined"
     }
     if (type === "array") {
         return "[]"
@@ -48,7 +48,7 @@ export function getDefaultValueByType(type: Type | undefined): string {
         return "[]"
     }
     if (type.isObject()) {
-        return "{}"
+        return "undefined"
     }
     return "undefined"
 }
@@ -106,21 +106,36 @@ export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | u
     return hasStaticModifier;
 }
 
+function removeImportType(typeText: string): string {
+    if (typeText.startsWith("import(")) {
+        //有这种情况：'import("captain/assets/Kingdom/script/SlotMachineModel").WinResult'
+        return "any"
+    }
+    return typeText
+}
+function toTypeTextInner(type: Type | undefined): string {
+    if (type === undefined) {
+        return "void"
+    }
+    if (type.isLiteral()) {
+        return removeImportType(type.getBaseTypeOfLiteralType().getText())
+    }
+    return removeImportType(type.getText())
+}
 export function toTypeText(type: Type | undefined): string {
     if (type === undefined) {
         return "void"
     }
 
-    if (type.isLiteral()) {
-        return type.getBaseTypeOfLiteralType().getText()
+    if (type.isArray()) {
+        const typeArgs = type.getTypeArguments();
+        if (typeArgs.length > 0) {
+            return `Array<${toTypeTextInner(typeArgs[0])}>`
+        }
+        return "Array"
     }
-    const typeText = type.getText();
-    if (typeText.startsWith("import(")) {
-        //有这种情况：'import("/Users/jkl/workspace/game/captain/assets/Kingdom/script/SlotMachineModel").WinResult'
-        const endIndex = typeText.indexOf(".")
-        return typeText.substring(endIndex+1)
-    }
-    return typeText
+
+    return toTypeTextInner(type)
 }
 
 export function isAssignmentStatement(statement: Statement): BinaryExpression | undefined {

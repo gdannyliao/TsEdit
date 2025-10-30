@@ -11,8 +11,11 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
   .option('project', {
     type: 'string', description: '要处理的ts项目路径', require: true, alias: 'p'
   })
+  .option('rename', {
+    type: 'boolean', description: '是否对类和属性进行重命名', alias: 'r'
+  })
   .option('name-map', {
-    type: 'string', description: '名称映射关系文件路径，未指定的类和属性将会被随机重命名', alias: 'n'
+    type: 'string', description: '名称映射关系文件路径，未指定的类和属性将会被随机重命名', alias: 'n', implies: 'rename'
   })
   .option('keep', {
     type: 'string', description: '要保留的符号名，以类全名为首行，后跟-PROPERTY_NAME作为此类的属性名', alias: 'k'
@@ -21,7 +24,7 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
     type: 'boolean', description: '是否将方法拆分成多个函数', alias: 's'
   })
   .option('reset-uuid', {
-    type: 'boolean', description: '是否重置所有类的uuid, 仅在cocos项目中生效', alias: 'r'
+    type: 'boolean', description: '是否重置所有类的uuid, 仅在cocos项目中生效', alias: 'ru'
   })
   .parseSync()
 
@@ -101,7 +104,9 @@ if (args['keep']) {
   obfusBuilder.setKeepMap(await parseKeepMap(file))
 }
 
-obfusBuilder.rename(args['name-map'] ? await parseNameMap(args['name-map']) : undefined, isCocosProject(args.project) ? "cocos" : undefined)
+if (args['rename']) {
+  obfusBuilder.rename(args['name-map'] ? await parseNameMap(args['name-map']) : undefined, isCocosProject(args.project) ? "cocos" : undefined)
+}
 
 if (args['split-method']) {
   obfusBuilder.splitMethod()
