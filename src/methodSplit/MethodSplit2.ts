@@ -2,7 +2,7 @@ import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind,
 import { CodeVisitor } from "../CodeScanner.ts";
 
 import { RandomSeed } from "../random.ts";
-import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByType, getDefaultValueByString, isAssignmentStatement, getBlock } from "../ASTTools.ts";
+import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByType, getDefaultValueByString, isAssignmentStatement, getBlock, hasBlock } from "../ASTTools.ts";
 import { buildScope, findMinScope, rebuildScope, Scope, Variable } from "./Scopes.ts";
 
 export class MethodSplitVisitor2 implements CodeVisitor {
@@ -111,7 +111,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             if (returnType instanceof Array) {
                 for (let i = 0; i < returnType.length; i++) {
                     addReturnType(returnType[i])
-             }
+                }
             } else {
                 addReturnType(returnType)
             }
@@ -209,10 +209,6 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     private insertMethod(stmts: (Statement | string)[], splitStmts: Statement[],
         scope: Scope, insertIdx: number) {
 
-        if (!this.currentCls || !this.currentMethod) {
-            return
-        }
-
         const newMethodName = `z_${this.random.getString(10)}`
         const { invokedVars, spilledVars, changedVars, jumpStmts } = scope.collectDataIn(splitStmts[0].getStartLineNumber(), splitStmts[splitStmts.length - 1].getEndLineNumber())
 
@@ -269,26 +265,31 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     /**
-     * 调整分割结束位置，避免分割到await表达式或new Promise表达式。
+     * 调整分割结束位置，跳过某些语句，如await表达式或new Promise表达式。
      * @param start 分割开始位置
      * @param end 分割结束位置
      * @param stmts 
      * @returns 
      */
-    private adjustSplitEnd(start: number, end: number, stmts: Statement[]): number {
+    private skipSomeStmt(start: number, end: number, stmts: Statement[]): number {
         for (let i = end - 1; i >= start; i--) {
+            if (stmts[i].getKind() === SyntaxKind.LabeledStatement) {
+                end = i //跳过labeled语句
+                continue
+            }
             const awaitExprs = stmts[i].getDescendantsOfKind(SyntaxKind.AwaitExpression)
             if (awaitExprs.length > 0) {
                 end = i //跳过await表达式
-            } else {
-                const newExprs = stmts[i].getDescendantsOfKind(SyntaxKind.NewExpression)
-                if (newExprs.length > 0) {
-                    for (const newExpr of newExprs) {
-                        const expr = newExpr.getExpression()
-                        if (expr && expr.getKind() === SyntaxKind.Identifier && expr.getText() === "Promise") {//含有new Promise
-                            end = i //跳过new Promise表达式
-                            break
-                        }
+                continue
+            }
+
+            const newExprs = stmts[i].getDescendantsOfKind(SyntaxKind.NewExpression)
+            if (newExprs.length > 0) {
+                for (const newExpr of newExprs) {
+                    const expr = newExpr.getExpression()
+                    if (expr && expr.getKind() === SyntaxKind.Identifier && expr.getText() === "Promise") {//含有new Promise
+                        end = i //跳过new Promise表达式
+                        break
                     }
                 }
             }
@@ -298,7 +299,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
 
     private split(scope: Scope, range: ([number, number] | undefined) = undefined): Scope {
         const stmts: (Statement | string)[] = scope.getBlock()!.getStatements()
-        if (stmts.length < 2 && getBlock(stmts[0] as Statement).length === 0) {
+        if (stmts.length < 2 && !hasBlock(stmts[0] as Statement)) { //如果只有一个语句，且不是块语句，则不需要分割
             return scope
         }
         const splitPoints: { start: number, end: number }[] = []
@@ -313,7 +314,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             while (start < stmts.length) {
                 start = this.random.getIntInRange(start, stmts.length - 1)
                 end = this.random.getIntInRange(start + 1, stmts.length);
-                const newEnd = this.adjustSplitEnd(start, end, stmts as Statement[])//还没分割，这里直接视为Statement[]不会有问题
+                const newEnd = this.skipSomeStmt(start, end, stmts as Statement[])//还没分割，这里直接视为Statement[]不会有问题
                 if (newEnd !== end) {
                     if (newEnd === start) { //如果newEnd === start，说明start语句就是await或者promise表达式，直接跳过
                         start = newEnd + 1
@@ -354,7 +355,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     private deepSplit(scope: Scope, range: ([number, number] | undefined) = undefined): Scope {
-        const newScope = this.split(scope, range)
+        const newScope = this.split(scope, range) //FIXME 先分割外层的话，子块可能随着分割一起被分割进了新函数，导致子块没有被分割到。但先分割子块，有可能会导致语句起始和终止位置改变，修正比较麻烦
 
         const children = newScope.getChildren()
         for (let i = children.length - 1; i >= 0; i--) { //较小的作用域排在后面，所以从较小的作用域开始处理
@@ -365,7 +366,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     private splitMethod(method: MethodDeclaration, range: [number, number] | undefined): boolean {
-        let scope = this.deepSplit(buildScope(SyntaxKind.MethodDeclaration,method), range)
+        let scope = this.deepSplit(buildScope(SyntaxKind.MethodDeclaration, method), range)
         return true
     }
     private visitMethodInternal(cls: ClassDeclaration, method: MethodDeclaration, range: [number, number] | undefined): boolean {

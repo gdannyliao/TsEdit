@@ -312,5 +312,5 @@ export function getBlock(stmt: Statement): Block[] {
  * @returns 如果语句包含块则返回true
  */
 export function hasBlock(stmt: Statement): boolean {
-    return getBlock(stmt) !== undefined;
+    return getBlock(stmt).length > 0;
 }
