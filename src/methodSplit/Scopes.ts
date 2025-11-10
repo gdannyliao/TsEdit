@@ -1,7 +1,6 @@
 
-import { AwaitExpression, BinaryExpression, BreakStatement, ContinueStatement, ExpressionStatement, ForOfStatement, Identifier, IterationStatement, LabeledStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, ts, VariableDeclarationList, VariableStatement } from 'ts-morph';
-import { getBlock, hasBlock, isAssignmentStatement, toTypeText } from '../ASTTools.ts';
-import { json } from 'node:stream/consumers';
+import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
+import { isAssignmentStatement, toTypeText } from '../ASTTools.ts';
 
 export class Variable {
     constructor(private name: string, private type: string, private startLine: number, private endLine: number) {
@@ -79,6 +78,15 @@ export class JumpStmt {
     getStmt() {
         return this.stmt
     }
+
+    setStmt(stmt: ReturnStatement | ContinueStatement | BreakStatement) {
+        this.stmt = stmt
+    }
+
+    /**
+     * 获取break、continue中断时指向的scope，或是return返回时指向的scope
+     * @returns 
+     */
     getReturnScope() {
         return this.returnScope
     }
@@ -87,7 +95,7 @@ export class Scope {
     private startLine: number
     private endLine: number
     private parent: Scope | undefined = undefined
-    private children: Scope[] = []
+    private children: Map<number, Scope> = new Map()
     private block: StatementedNode | undefined = undefined
     private kind: SyntaxKind
 
@@ -97,11 +105,14 @@ export class Scope {
     private unaryExprs: Set<PrefixUnaryExpression | PostfixUnaryExpression> = new Set()
     private invokedVars: Map<Variable, number[]> = new Map()
 
-    constructor(kind: SyntaxKind, block: StatementedNode, parent: Scope | undefined = undefined) {
+    constructor(kind: SyntaxKind, block: StatementedNode, parent: Scope | undefined = undefined, start: number = -1) {
         this.block = block
         this.kind = kind
         const stmts = block.getStatements()
-        this.startLine = stmts[0].getStartLineNumber()
+        if (start === -1)
+            this.startLine = stmts[0].getStartLineNumber()
+        else
+            this.startLine = start
         this.endLine = stmts[stmts.length - 1].getEndLineNumber()
         this.parent = parent
         if (parent) {
@@ -130,7 +141,7 @@ export class Scope {
      */
     getInvokedVars() {
         const invokedVars = new Map<Variable, number[]>()
-        for (const child of this.children) {
+        for (const child of this.children.values()) {
             child.getInvokedVars().forEach((line, var_) => invokedVars.set(var_, line))
         }
         this.invokedVars.forEach((line, var_) => invokedVars.set(var_, line))
@@ -139,11 +150,7 @@ export class Scope {
 
 
     updateChild(scope: Scope, newScope: Scope) {
-        const index = this.children.findIndex(child => child === scope)
-        if (index === -1) {
-            return
-        }
-        this.children[index] = newScope
+        this.children[scope.startLine] = newScope
         newScope.parent = this
 
         const newEndLine = this.block.getStatements()[this.block.getStatements().length - 1].getEndLineNumber()
@@ -175,7 +182,7 @@ export class Scope {
      */
     getAssignExprs() {
         const assignExprs = new Set<BinaryExpression>()
-        for (const child of this.children) {
+        for (const child of this.children.values()) {
             child.getAssignExprs().forEach(assignExpr => assignExprs.add(assignExpr))
         }
         this.assignExprs.forEach(assignExpr => assignExprs.add(assignExpr))
@@ -184,7 +191,7 @@ export class Scope {
 
     getUnaryExprs() {
         const unaryExprs = new Set<PrefixUnaryExpression | PostfixUnaryExpression>()
-        for (const child of this.children) {
+        for (const child of this.children.values()) {
             child.getUnaryExprs().forEach(unaryExpr => unaryExprs.add(unaryExpr))
         }
         this.unaryExprs.forEach(unaryExpr => unaryExprs.add(unaryExpr))
@@ -194,7 +201,7 @@ export class Scope {
     /**
      * 比较当前作用域与给定作用域的包含关系
      * @param scope 要比较的作用域
-     * @returns 0 表示包含关系相等，1 表示当前作用域包含给定作用域，-1 表示当前作用域被给定作用域包含，-2 表示两者是交叉或者无关系
+    * @returns 0：相等， 1：1包含2， 2：1底部与2交叉，3：1包含2，且1与2顶部齐平 -1：2包含1， -2：1顶部与2交叉， -3：2包含1，且1与2顶部齐平， -100：不相交
      */
     compare(scope: Scope): number {
         return compare(this.startLine, this.endLine, scope.startLine, scope.endLine)
@@ -205,11 +212,10 @@ export class Scope {
     }
 
     addChild(child: Scope) {
-        const index = this.children.findIndex(c => c === child)
-        if (index === -1) {
-            this.children.push(child)
+        if (!this.children.has(child.startLine)) {
+            this.children.set(child.startLine, child)
         } else {
-            this.updateChild(this.children[index], child)
+            this.updateChild(this.children.get(child.startLine), child)
         }
     }
 
@@ -277,7 +283,7 @@ export class Scope {
     getJumpStmts(includeChild: boolean = true) {
         const returns = new Set<JumpStmt>()
         if (includeChild) {
-            for (const child of this.children) {
+            for (const child of this.children.values()) {
                 child.getJumpStmts().forEach(ret => returns.add(ret))
             }
         }
@@ -288,24 +294,13 @@ export class Scope {
         return this.block
     }
 
-    collectChildScopeIn(startLine: number, endLine: number): Array<Scope> {
-        const childScopes = new Array<Scope>()
-        for (const child of this.children) {
-            const compareResult = child.compareRange(startLine, endLine)
-            if (compareResult === 0 || compareResult === -1) {
-                childScopes.push(child)
-            }
-        }
-        return childScopes
-    }
-
     collectDataIn(startLine: number, endLine: number): {
         invokedVars: Set<Variable>, spilledVars: Set<Variable>, changedVars: Set<Variable>
-        , jumpStmts: Array<ReturnStatement | ContinueStatement | BreakStatement>
+        , jumpStmts: Array<JumpStmt>
     } {
         const spilledVars = new Set<Variable>()
         const changedVars = new Set<Variable>()
-        const jumpStmts = new Array<ReturnStatement | ContinueStatement | BreakStatement>()
+        const jumpStmts = new Array<JumpStmt>()
         const invokedVars = new Set<Variable>()
         const newVarsInRange = new Set<Variable>()
 
@@ -370,11 +365,15 @@ export class Scope {
             const jumpStmt = jump.getStmt()
             if (jumpStmt.getStartLineNumber() >= startLine && jumpStmt.getEndLineNumber() <= endLine) {
                 if (!(jumpStmt instanceof ReturnStatement)) {
-                    if (jump.getReturnScope() === this) {
-                        jumpStmts.push(jumpStmt) // 只有切分的语句是循环语句本身时，才应该把break和continue语句，传递给上层函数
+                    switch (jump.getReturnScope().compare(this)) {
+                        case 0:
+                        case 1:
+                        case 3:
+                            jumpStmts.push(jump) // 切分的语句在ReturnScope中时，才应该把break和continue语句，传递给上层函数
+
                     }
                 } else {
-                    jumpStmts.push(jumpStmt)
+                    jumpStmts.push(jump)
                 }
             }
         })
@@ -425,17 +424,28 @@ function getReturnScope(scope: Scope): Scope {
     return scope
 }
 
+function toVariable(decl: VariableDeclaration, endLine: number): Variable[] {
+    const vars: Variable[] = []
+    const nameNode = decl.getNameNode()
+    if (nameNode instanceof ObjectBindingPattern) {
+        nameNode.getElements().forEach(elem => {
+            vars.push(new Variable(elem.getName(), toTypeText(elem.getType()), decl.getStartLineNumber(), endLine))
+        })
+    } else if (nameNode instanceof ArrayBindingPattern) {
+        nameNode.getElements().forEach(elem => {
+            if (elem instanceof BindingElement) {
+                vars.push(new Variable(elem.getName(), toTypeText(elem.getType()), decl.getStartLineNumber(), endLine))
+            }
+        })
+    } else {
+        vars.push(new Variable(decl.getName(), toTypeText(decl.getType()), decl.getStartLineNumber(), endLine))
+    }
+    return vars
+}
 function toVariables(decls: VariableDeclarationList, endLine: number): Variable[] {
     const vars: Variable[] = []
     for (const decl of decls.getDeclarations()) {
-        const nameNode = decl.getNameNode()
-        if (nameNode instanceof ObjectBindingPattern) {
-            nameNode.getElements().forEach(elem => {
-                vars.push(new Variable(elem.getName(), toTypeText(elem.getType()), decl.getStartLineNumber(), endLine))
-            })
-        } else {
-            vars.push(new Variable(decl.getName(), toTypeText(decl.getType()), decl.getStartLineNumber(), endLine))
-        }
+        vars.push(...toVariable(decl, endLine))
     }
     return vars
 }
@@ -444,17 +454,6 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
         case SyntaxKind.VariableStatement: {
             const varStmt = stmt.asKind(SyntaxKind.VariableStatement)!
             parentScope.addVariables(toVariables(varStmt.getDeclarationList(), parentScope.getEndLine()))
-            // const decls = varStmt.getDeclarations()
-            // for (const decl of decls) {
-            //     const nameNode = decl.getNameNode()
-            //     if (nameNode instanceof ObjectBindingPattern) {
-            //         nameNode.getElements().forEach(elem => {
-                        // parentScope.addVariable(new Variable(elem.getName(), toTypeText(elem.getType()), varStmt.getStartLineNumber(), parentScope.getEndLine()))
-            //         })
-            //     } else {
-            //         parentScope.addVariable(new Variable(decl.getName(), toTypeText(decl.getType()), varStmt.getStartLineNumber(), parentScope.getEndLine()))
-            //     }
-            // }
             break;
         }
         case SyntaxKind.ReturnStatement: {
@@ -484,7 +483,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
 
             const thenStmt = ifStmt.getThenStatement();
             if (thenStmt.getKind() === SyntaxKind.Block) {
-                scanInternal(SyntaxKind.IfStatement, thenStmt.asKind(SyntaxKind.Block)!, parentScope);
+                scanInternal(SyntaxKind.IfStatement, thenStmt.asKind(SyntaxKind.Block)!, parentScope, undefined, stmt.getStartLineNumber());
             } else {
                 checkStmt(thenStmt, parentScope);
             }
@@ -504,12 +503,8 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             let variables: Variable[] = []
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forOfStmt.getEndLineNumber())
-                // const decls = initStmt.getDeclarations()
-                // for (const decl of decls) {
-                //     variables.push(new Variable(decl.getName(), toTypeText(decl.getType()), forOfStmt.getStartLineNumber(), forOfStmt.getEndLineNumber()))
-                // }
             }
-            scanInternal(SyntaxKind.ForOfStatement, forOfStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables);
+            scanInternal(SyntaxKind.ForOfStatement, forOfStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.ForStatement: {
@@ -518,12 +513,8 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             let variables: Variable[] = []
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forStmt.getEndLineNumber())
-                // const decls = initStmt.getDeclarations()
-                // for (const decl of decls) {
-                //     variables.push(new Variable(decl.getName(), toTypeText(decl.getType()), forStmt.getStartLineNumber(), forStmt.getEndLineNumber()))
-                // }
             }
-            scanInternal(SyntaxKind.ForStatement, forStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables);
+            scanInternal(SyntaxKind.ForStatement, forStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.ForInStatement: {
@@ -532,32 +523,29 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             let variables: Variable[] = []
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forInStmt.getEndLineNumber())
-                // const decls = initStmt.getDeclarations()
-                // for (const decl of decls) {
-                //     variables.push(new Variable(decl.getName(), toTypeText(decl.getType()), forInStmt.getStartLineNumber(), forInStmt.getEndLineNumber()))
-                // }
             }
-            scanInternal(SyntaxKind.ForInStatement, forInStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables);
+            scanInternal(SyntaxKind.ForInStatement, forInStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.WhileStatement:
         case SyntaxKind.DoStatement: {
             // 这些都继承自IterationStatement，有统一的getStatement方法
             const iterStmt = stmt as IterationStatement;
-            scanInternal(stmt.getKind(), iterStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope);
+            scanInternal(stmt.getKind(), iterStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, undefined, stmt.getStartLineNumber());
             break;
         }
         case SyntaxKind.TryStatement: {
             const tryStmt = stmt.asKind(SyntaxKind.TryStatement)!;
-            const catchBlock = tryStmt.getCatchClause()?.getBlock()
+            const catchClause = tryStmt.getCatchClause()
             const finallyBlock = tryStmt.getFinallyBlock()
 
-            scanInternal(SyntaxKind.TryStatement, tryStmt.getTryBlock(), parentScope);
-            if (catchBlock) {
-                scanInternal(SyntaxKind.TryStatement, catchBlock, parentScope);
+            scanInternal(SyntaxKind.TryStatement, tryStmt.getTryBlock(), parentScope, undefined, tryStmt.getStartLineNumber());
+            if (catchClause) {
+                const vars = toVariable(catchClause.getVariableDeclaration(), catchClause.getEndLineNumber())
+                scanInternal(SyntaxKind.TryStatement, catchClause.getBlock(), parentScope, vars, catchClause.getStartLineNumber());
             }
             if (finallyBlock) {
-                scanInternal(SyntaxKind.TryStatement, finallyBlock, parentScope);
+                scanInternal(SyntaxKind.TryStatement, finallyBlock, parentScope, undefined, finallyBlock.getStartLineNumber());
             }
             break;
         }
@@ -583,7 +571,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
         // With语句（虽然在严格模式下不推荐使用）
         case SyntaxKind.WithStatement: {
             const withStmt = stmt.asKind(SyntaxKind.WithStatement)!;
-            scanInternal(SyntaxKind.WithStatement, withStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope);
+            scanInternal(SyntaxKind.WithStatement, withStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, undefined, stmt.getStartLineNumber());
             break;
         }
     }
@@ -593,8 +581,8 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
     }
 }
 
-function scanInternal(kind: SyntaxKind, stmtNode: StatementedNode, parentScope: Scope | undefined = undefined, params: Variable[] = []): Scope {
-    const scope = new Scope(kind, stmtNode, parentScope);
+function scanInternal(kind: SyntaxKind, stmtNode: StatementedNode, parentScope: Scope | undefined = undefined, params: Variable[] = [], start: number = -1): Scope {
+    const scope = new Scope(kind, stmtNode, parentScope, start);
     for (const param of params) {
         scope.addVariable(param)
     }
@@ -606,26 +594,26 @@ function scanInternal(kind: SyntaxKind, stmtNode: StatementedNode, parentScope: 
     return scope
 }
 
-export function findMinScope(scope: Scope, lineNumber: number): Scope | undefined {
-    if (scope.hasLine(lineNumber)) {
-        let minScope = scope
-        const children = scope.getChildren()
-        for (let i = children.length - 1; i >= 0; i--) {
-            const childScope = findMinScope(children[i], lineNumber)
-            if (childScope && minScope.compare(childScope) >= 0) {//作用域相等时，优先使用子作用域
-                minScope = childScope
-            }
-        }
-        return minScope
-    }
-    return undefined
-}
+// export function findMinScope(scope: Scope, lineNumber: number): Scope | undefined {
+//     if (scope.hasLine(lineNumber)) {
+//         let minScope = scope
+//         const children = scope.getChildren()
+//         for (let i = children.length - 1; i >= 0; i--) {
+//             const childScope = findMinScope(children[i], lineNumber)
+//             if (childScope && minScope.compare(childScope) >= 0) {//作用域相等时，优先使用子作用域
+//                 minScope = childScope
+//             }
+//         }
+//         return minScope
+//     }
+//     return undefined
+// }
 
 export function rebuildScope(scope: Scope): Scope {
     const block = scope.getBlock()
     const parent = scope.getParent()
     const vars = scope.getVariables(false)
-    const newScope = scanInternal(scope.getKind(), block!, parent, Array.from(vars.values()))
+    const newScope = scanInternal(scope.getKind(), block!, parent, Array.from(vars.values()), scope.getStartLine())
     return newScope
 }
 
