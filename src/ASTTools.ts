@@ -1,4 +1,4 @@
-import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression, MethodDeclaration, FunctionDeclaration } from 'ts-morph';
+import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression, MethodDeclaration, FunctionDeclaration, ExpressionStatement, PostfixUnaryExpression, PrefixUnaryExpression } from 'ts-morph';
 
 
 export function getDefaultValueByString(type: string | undefined): string {
@@ -173,6 +173,21 @@ export function isAssignmentStatement(statement: Statement): BinaryExpression | 
     }
 
     return undefined;
+}
+
+export function isUnaryExpression(stmt: ExpressionStatement): PrefixUnaryExpression | PostfixUnaryExpression | undefined {
+    if (stmt.getKind() !== SyntaxKind.ExpressionStatement) {
+        return undefined
+    }
+    const exprStmt = stmt.asKind(SyntaxKind.ExpressionStatement)!
+    const expr = exprStmt.getExpression()
+
+    if (expr.getKind() === SyntaxKind.PrefixUnaryExpression) {
+        return expr.asKind(SyntaxKind.PrefixUnaryExpression)
+    } else if (expr.getKind() === SyntaxKind.PostfixUnaryExpression) {
+        return expr.asKind(SyntaxKind.PostfixUnaryExpression)
+    }
+    return undefined
 }
 
 export class Block {

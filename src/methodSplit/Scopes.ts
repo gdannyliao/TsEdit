@@ -1,6 +1,6 @@
 
 import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
-import { isAssignmentStatement, toTypeText } from '../ASTTools.ts';
+import { isAssignmentStatement, toTypeText, isUnaryExpression } from '../ASTTools.ts';
 
 export class Variable {
     constructor(private name: string, private type: string, private startLine: number, private endLine: number) {
@@ -235,11 +235,6 @@ export class Scope {
         return this.parent
     }
 
-    hasLine(line: number) {
-        return this.startLine <= line && line <= this.endLine
-    }
-
-
     addVariable(variable: Variable) {
         this.vars.set(variable.getName(), variable)
     }
@@ -388,20 +383,7 @@ export class Scope {
     }
 }
 
-function isUnaryExpression(stmt: ExpressionStatement): PrefixUnaryExpression | PostfixUnaryExpression | undefined {
-    if (stmt.getKind() !== SyntaxKind.ExpressionStatement) {
-        return undefined
-    }
-    const exprStmt = stmt.asKind(SyntaxKind.ExpressionStatement)!
-    const expr = exprStmt.getExpression()
 
-    if (expr.getKind() === SyntaxKind.PrefixUnaryExpression) {
-        return expr.asKind(SyntaxKind.PrefixUnaryExpression)
-    } else if (expr.getKind() === SyntaxKind.PostfixUnaryExpression) {
-        return expr.asKind(SyntaxKind.PostfixUnaryExpression)
-    }
-    return undefined
-}
 
 function getReturnScope(scope: Scope): Scope {
     let curScope = scope
@@ -594,20 +576,6 @@ function scanInternal(kind: SyntaxKind, stmtNode: StatementedNode, parentScope: 
     return scope
 }
 
-// export function findMinScope(scope: Scope, lineNumber: number): Scope | undefined {
-//     if (scope.hasLine(lineNumber)) {
-//         let minScope = scope
-//         const children = scope.getChildren()
-//         for (let i = children.length - 1; i >= 0; i--) {
-//             const childScope = findMinScope(children[i], lineNumber)
-//             if (childScope && minScope.compare(childScope) >= 0) {//作用域相等时，优先使用子作用域
-//                 minScope = childScope
-//             }
-//         }
-//         return minScope
-//     }
-//     return undefined
-// }
 
 export function rebuildScope(scope: Scope): Scope {
     const block = scope.getBlock()

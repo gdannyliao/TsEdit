@@ -1,4 +1,4 @@
-import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind, ParameterDeclarationStructure, StructureKind, ReturnStatement, SourceFile, BreakStatement, ContinueStatement } from "ts-morph"
+import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind, ParameterDeclarationStructure, StructureKind, ReturnStatement, SourceFile, BreakStatement, ContinueStatement, ts } from "ts-morph"
 import { CodeVisitor } from "../CodeScanner.ts";
 
 import { RandomSeed } from "../random.ts";
@@ -210,7 +210,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
      * @param scope 
      * @returns 
      */
-    private insertMethod(newStmts: (Statement | string)[], splitStmts: Statement[],
+    private insertNewMethod(newStmts: (Statement | string)[], splitStmts: Statement[],
         scope: Scope, insertIdx: number) {
 
         const newMethodName = `z_${this.random.getString(10)}`
@@ -301,11 +301,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         return end
     }
 
-    private split(scope: Scope, range: ([number, number] | undefined) = undefined) {
-        const stmts: Statement[] = scope.getBlock()!.getStatements()
-        if (stmts.length < 2 && !hasBlock(stmts[0])) { //如果只有一个语句，且不是块语句，则不需要分割
-            return
-        }
+    private ensureSplitPoints(stmts: Statement[], range: [number, number]): { start: number, end: number }[] {
         const splitPoints: { start: number, end: number }[] = []
         if (range) {
             let end = range[1]
@@ -334,6 +330,22 @@ export class MethodSplitVisitor2 implements CodeVisitor {
                 }
             }
         }
+        return splitPoints
+    }
+
+    private replaceOldMethod(scope: Scope, newStmts: (Statement | string)[]) {
+        const newStrStmts = newStmts.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)//这行必须先执行，不能在removeStatements之后执行
+        const block = scope.getBlock()!
+        block.removeStatements([0, block.getStatementsWithComments().length])
+        block.addStatements(newStrStmts)
+    }
+
+    private split(scope: Scope, range: ([number, number] | undefined) = undefined) {
+        const stmts: Statement[] = scope.getBlock()!.getStatements()
+        if (stmts.length < 2 && !hasBlock(stmts[0])) { //如果只有一个语句，且不是块语句，则不需要分割
+            return
+        }
+        const splitPoints: { start: number, end: number }[] = this.ensureSplitPoints(stmts, range)
 
         this.resetTempVarIdx()
         const newStmts: (Statement | string)[] = Array.from(stmts)
@@ -343,13 +355,9 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             //由于从后往前分割，所以splitStmt可以直接视为Statement[]，因为插入的string statement都在后面
             const splitStmts: Statement[] = newStmts.splice(start, end - start) as Statement[]
 
-            this.insertMethod(newStmts, splitStmts, scope, start)
+            this.insertNewMethod(newStmts, splitStmts, scope, start)
         }
-
-        const newStrStmts = newStmts.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)//这行必须先执行，不能在removeStatements之后执行
-        const block = scope.getBlock()!
-        block.removeStatements([0, block.getStatementsWithComments().length])
-        block.addStatements(newStrStmts)
+        this.replaceOldMethod(scope, newStmts)
     }
 
     private deepSplit(scope: Scope, range: ([number, number] | undefined) = undefined) {
