@@ -7,7 +7,8 @@ import process from "node:process";
 import * as fs from 'node:fs/promises';
 import { RenameMap } from "./RenameMapBuilder.ts";
 
-const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
+const version = "2.0.0"
+const args = yargs(hideBin(process.argv)).scriptName(`ts-obfus`)
   .option('project', {
     type: 'string', description: '要处理的ts项目路径', require: true, alias: 'p'
   })
@@ -26,6 +27,8 @@ const args = yargs(hideBin(process.argv)).scriptName("ts-obfus")
   .option('reset-uuid', {
     type: 'boolean', description: '是否重置所有类的uuid, 仅在cocos项目中生效', alias: 'ru'
   })
+  .version(version)
+  .showVersion("log")
   .parseSync()
 
 
