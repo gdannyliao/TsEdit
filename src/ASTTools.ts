@@ -109,6 +109,10 @@ export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | u
 function removeImportType(typeText: string): string {
     if (typeText.startsWith("import(")) {
         //有这种情况：'import("captain/assets/Kingdom/script/SlotMachineModel").WinResult'
+        const type =  typeText.split(".").pop()
+        if (type !== undefined && type !== "default") {
+            return type
+        }
         return "any"
     }
     return typeText
