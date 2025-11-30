@@ -108,8 +108,20 @@ export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | u
 
 function removeImportType(typeText: string): string {
     if (typeText.startsWith("import(")) {
-        //有这种情况：'import("captain/assets/Kingdom/script/SlotMachineModel").WinResult'
-        const type =  typeText.split(".").pop()
+        // Handle default exports: import(".../SlotMachineModel").default
+        if (typeText.endsWith(").default")) {
+            const match = typeText.match(/import\("(.+)"\)\.default/);
+            if (match && match[1]) {
+                const path = match[1];
+                const parts = path.split("/");
+                const fileName = parts[parts.length - 1];
+                // Remove extension if present (though usually import paths don't have extensions in TS)
+                return fileName.split(".")[0];
+            }
+        }
+
+        // Handle named exports: import("...").WinResult
+        const type = typeText.split(".").pop()
         if (type !== undefined && type !== "default") {
             return type
         }

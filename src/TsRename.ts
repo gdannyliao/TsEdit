@@ -71,9 +71,13 @@ export class RenameVisitor implements CodeVisitor {
         if (!newMethodName) {
             return false
         }
+        if (newMethodName === methodName) {
+            return false
+        }
         if (this.extendFromSdk(cls.getType(), methodName)) {
             return false
         }
+        //FIXME 如果重命名的是一个子类的函数，但父类这个函数是保留的，子类的函数也应该保留。（目前没有处理这个情况）
         console.log("rename method", className, methodName, newMethodName)
         method.rename(newMethodName)
         this.invokeGraph.setMethodName(className, methodName, newMethodName)
@@ -90,6 +94,9 @@ export class RenameVisitor implements CodeVisitor {
         const propertyName = property.getName()!
         const newPropertyName = classMap.getNewProperty(propertyName)
         if (!newPropertyName) {
+            return false
+        }
+        if (newPropertyName === propertyName) {
             return false
         }
         if (this.extendFromSdk(cls.getType(), propertyName)) {

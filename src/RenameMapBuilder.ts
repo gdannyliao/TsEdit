@@ -134,6 +134,7 @@ export class RenameMapBuilder {
                     }
                     if (keepSet?.has(propertyName)) {
                         console.warn(`保留类${className}的属性${propertyName}`)
+                        renameMap.setProperty(propertyName, propertyName)
                         return
                     }
 
@@ -154,6 +155,7 @@ export class RenameMapBuilder {
                     }
                     if (keepSet?.has(methodName)) {
                         console.warn(`保留类${className}的方法${methodName}`)
+                        renameMap.setMethod(methodName, methodName)
                         return
                     }
                     if (renameMap.getNewMethod(methodName)) {

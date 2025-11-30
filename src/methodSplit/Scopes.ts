@@ -496,6 +496,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forStmt.getEndLineNumber())
             }
+            //FIXME forStmt.getStatement() 单行时有可能不是BlockStatement而是ExpressionStatement
             scanInternal(SyntaxKind.ForStatement, forStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
             break
         }

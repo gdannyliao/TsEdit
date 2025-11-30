@@ -255,6 +255,12 @@ export class CocosInvokeGraph implements InvokeGraph {
             }
         }
     }
+    private isShortId(text: string | undefined): boolean {
+        if (text === undefined) {
+            return false
+        }
+        return !(text.startsWith("cc.") || text === 'TypedArray')
+    }
     private handleJson(json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
 
         for (const k in json) {
@@ -278,18 +284,32 @@ export class CocosInvokeGraph implements InvokeGraph {
                     }
                 }
             } else if ("__type__" === k) { //处理变量引用
-                const shortId = json.__type__
-                this.recordShortId(shortId, json, file, fileContent)
-                const classDecl = this.getDefaultExportClassByShortId(shortId)
-                if (classDecl !== undefined) {
-                    const properties = classDecl.getProperties()
-                    for (let i = 0; i < properties.length; i++) {
-                        const property = properties[i];
-                        const propertyName = property.getName()
-                        if (!(propertyName in json)) {
+                if (!this.isShortId(json.__type__)) {
+                    if (json.__type__ === 'TypedArray') {
+                        continue
+                    }
+                    if ("component" in json && "handler" in json) { //处理组件引用
+                        const clsName = json.component
+                        const methodName = json.handler
+                        if (clsName === undefined || methodName === undefined ) {
                             continue
                         }
-                        this.cacheClassInvoke(classDecl.getName()!, propertyName, Property, file, json, fileContent)
+                        this.cacheClassInvoke(clsName, methodName, Method, file, json, fileContent)
+                    }
+                } else {
+                    const shortId = json.__type__
+                    this.recordShortId(shortId, json, file, fileContent)
+                    const classDecl = this.getDefaultExportClassByShortId(shortId)
+                    if (classDecl !== undefined) {
+                        const properties = classDecl.getProperties()
+                        for (let i = 0; i < properties.length; i++) {
+                            const property = properties[i];
+                            const propertyName = property.getName()
+                            if (!(propertyName in json)) {
+                                continue
+                            }
+                            this.cacheClassInvoke(classDecl.getName()!, propertyName, Property, file, json, fileContent)
+                        }
                     }
                 }
             } else if ("__uuid__" === k) {
