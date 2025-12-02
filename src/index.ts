@@ -7,7 +7,7 @@ import process from "node:process";
 import * as fs from 'node:fs/promises';
 import { RenameMap } from "./RenameMapBuilder.ts";
 
-const version = "2.0.1"
+const version = "2.0.2"
 const args = yargs(hideBin(process.argv)).scriptName(`ts-obfus`)
   .option('project', {
     type: 'string', description: '要处理的ts项目路径', require: true, alias: 'p'
