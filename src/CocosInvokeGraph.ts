@@ -182,17 +182,18 @@ export class CocosInvokeGraph implements InvokeGraph {
         this.shortId2file = new Map<string, MetaFile>()
     }
 
-    private getExportClass(file: string): ClassDeclaration | undefined {
+    private getExportClass(file: string): ClassDeclaration[] {
         const sourceFile = this.morphProject.getSourceFile(file)
+        const classDecls: ClassDeclaration[] = []
         if (sourceFile === undefined) {
-            return undefined
+            return classDecls
         }
         for (const c of sourceFile.getClasses()) {
             if (c.isExported()) {
-                return c
+                classDecls.push(c)
             }
         }
-        return undefined
+        return classDecls
     }
 
     private getMethod(classDecl: ClassDeclaration, methodName: string): MethodDeclaration | undefined {
@@ -233,17 +234,19 @@ export class CocosInvokeGraph implements InvokeGraph {
         member.addInvoke(new Invoke(invokeFile, invokeFileContent, invokeJson))
     }
 
-    private getDefaultExportClassByShortId(shortId: string): ClassDeclaration | undefined {
+    private getExportClassByShortId(shortId: string): ClassDeclaration[] {
         const file = this.shortId2file.get(shortId)
         if (file === undefined) {
-            return undefined
+            return []
         }
-        const classDecl = this.getExportClass(file.getFileName()) //FIXME 通过文件名来获取类声明，不太准确
-        if (classDecl === undefined) {
-            return undefined
+        const classDecls = this.getExportClass(file.getFileName()) //FIXME 通过文件名来获取类声明，不太准确
+        if (classDecls.length === 0) {
+            return classDecls
         }
-        this.class2ShortId.set(classDecl.getName()!, shortId)
-        return classDecl
+        for (const c of classDecls) {
+            this.class2ShortId.set(c.getName()!, shortId)
+        }
+        return classDecls
     }
 
     private recordShortId(shortId: string, json: Record<string, any>, file: string, fileContent: Record<string, any>[]) {
@@ -276,11 +279,12 @@ export class CocosInvokeGraph implements InvokeGraph {
             } else if ("_componentId" === k) { //处理方法引用
                 const shortId = json._componentId
                 this.recordShortId(shortId, json, file, fileContent)
-                const classDecl = this.getDefaultExportClassByShortId(shortId)
-                if (classDecl !== undefined) {
-                    const method = this.getMethod(classDecl, json.handler)
+                const classDecls = this.getExportClassByShortId(shortId)
+                for (const c of classDecls) {
+                    const method = this.getMethod(c, json.handler)
                     if (method !== undefined) {
-                        this.cacheClassInvoke(classDecl.getName()!, json.handler, Method, file, json, fileContent)
+                        this.cacheClassInvoke(c.getName()!, json.handler, Method, file, json, fileContent)
+                        break
                     }
                 }
             } else if ("__type__" === k) { //处理变量引用
@@ -299,16 +303,24 @@ export class CocosInvokeGraph implements InvokeGraph {
                 } else {
                     const shortId = json.__type__
                     this.recordShortId(shortId, json, file, fileContent)
-                    const classDecl = this.getDefaultExportClassByShortId(shortId)
-                    if (classDecl !== undefined) {
-                        const properties = classDecl.getProperties()
+                    const classDecls = this.getExportClassByShortId(shortId)
+                    for (const c of classDecls) {
+                        const decorators = c.getDecorators()
+                        if (decorators.length === 0 || !decorators.some((d) => d.getName() === "ccclass")) {
+                            continue
+                        }
+                        const properties = c.getProperties()
                         for (let i = 0; i < properties.length; i++) {
                             const property = properties[i];
+                            const decorators = property.getDecorators()
+                            if (decorators.length === 0 || !decorators.some((d) => d.getName() === "property")) {
+                                continue
+                            }
                             const propertyName = property.getName()
                             if (!(propertyName in json)) {
                                 continue
                             }
-                            this.cacheClassInvoke(classDecl.getName()!, propertyName, Property, file, json, fileContent)
+                            this.cacheClassInvoke(c.getName()!, propertyName, Property, file, json, fileContent);
                         }
                     }
                 }
