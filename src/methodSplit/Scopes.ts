@@ -1,6 +1,6 @@
 
 import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
-import { isAssignmentStatement, toTypeText, isUnaryExpression } from '../ASTTools.ts';
+import { isAssignmentStatement, toTypeText, isUnaryExpression } from '../ASTTools';
 
 export class Variable {
     constructor(private name: string, private type: string, private startLine: number, private endLine: number) {
@@ -69,6 +69,8 @@ function compare(start1: number, end1: number, start2: number, end2: number): nu
         }
         return -3 //2包含1，且1与2顶部齐平
     }
+    // Should never reach here, but TypeScript requires a return
+    return -100
 }
 
 export class JumpStmt {
@@ -150,13 +152,16 @@ export class Scope {
 
 
     updateChild(scope: Scope, newScope: Scope) {
-        this.children[scope.startLine] = newScope
+        this.children.set(scope.startLine, newScope)
         newScope.parent = this
 
-        const newEndLine = this.block.getStatements()[this.block.getStatements().length - 1].getEndLineNumber()
-        for (const v of this.vars.values()) {
-            if (v.getEndLine() === this.endLine) {
-                v.updateRange(v.getStartLine(), newEndLine)
+        const statements = this.block?.getStatements()
+        if (statements && statements.length > 0) {
+            const newEndLine = statements[statements.length - 1].getEndLineNumber()
+            for (const v of this.vars.values()) {
+                if (v.getEndLine() === this.endLine) {
+                    v.updateRange(v.getStartLine(), newEndLine)
+                }
             }
         }
     }
@@ -215,7 +220,10 @@ export class Scope {
         if (!this.children.has(child.startLine)) {
             this.children.set(child.startLine, child)
         } else {
-            this.updateChild(this.children.get(child.startLine), child)
+            const existingChild = this.children.get(child.startLine)
+            if (existingChild !== undefined) {
+                this.updateChild(existingChild, child)
+            }
         }
     }
 
@@ -401,7 +409,11 @@ function getReturnScope(scope: Scope): Scope {
             case SyntaxKind.ArrowFunction:
                 return curScope
         }
-        curScope = curScope.getParent()
+        const parent = curScope.getParent()
+        if (parent === undefined) {
+            return scope
+        }
+        curScope = parent
     }
     return scope
 }
@@ -524,8 +536,13 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
 
             scanInternal(SyntaxKind.TryStatement, tryStmt.getTryBlock(), parentScope, undefined, tryStmt.getStartLineNumber());
             if (catchClause) {
-                const vars = toVariable(catchClause.getVariableDeclaration(), catchClause.getEndLineNumber())
-                scanInternal(SyntaxKind.TryStatement, catchClause.getBlock(), parentScope, vars, catchClause.getStartLineNumber());
+                const varDecl = catchClause.getVariableDeclaration()
+                if (varDecl !== undefined) {
+                    const vars = toVariable(varDecl, catchClause.getEndLineNumber())
+                    scanInternal(SyntaxKind.TryStatement, catchClause.getBlock(), parentScope, vars, catchClause.getStartLineNumber());
+                } else {
+                    scanInternal(SyntaxKind.TryStatement, catchClause.getBlock(), parentScope, undefined, catchClause.getStartLineNumber());
+                }
             }
             if (finallyBlock) {
                 scanInternal(SyntaxKind.TryStatement, finallyBlock, parentScope, undefined, finallyBlock.getStartLineNumber());

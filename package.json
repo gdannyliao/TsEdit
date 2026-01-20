@@ -3,29 +3,39 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "type": "module",
+  "bin": "dist/index.js",
   "scripts": {
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "build": "tsc || true",
+    "package": "pkg . --targets node18-macos-x64 --output bin/tsedit",
+    "package:all": "pkg . --targets node18-macos-x64,node18-linux-x64,node18-win-x64 --output bin/tsedit",
+    "package:mac": "pkg . --targets node18-macos-x64 --output bin/tsedit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "pkg": {
+    "scripts": [
+      "dist/**/*.js"
+    ],
+    "assets": []
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.10",
     "@types/seedrandom": "^3.0.8",
     "jest": "^30.0.4",
+    "pkg": "^5.8.1",
     "ts-jest": "^29.4.0",
     "ts-morph": "^26.0.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "node-uuid": "^1.4.8",
     "seedrandom": "^3.0.5",
     "ts-node": "^10.9.2",
     "uuid": "^11.1.0",
-    "yargs": "^18.0.0"
+    "yargs": "^17.7.2"
   }
 }

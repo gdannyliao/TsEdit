@@ -1,4 +1,4 @@
-import { ClassMember, Invoke, InvokeGraph } from "./InvokeGraph.ts";
+import { ClassMember, Invoke, InvokeGraph } from "./InvokeGraph";
 
 export class EmptyInvokeGraph implements InvokeGraph {
   setClassName(className: string, newName: string): void {

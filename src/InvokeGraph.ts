@@ -1,6 +1,6 @@
-import { writeFileSync } from "node:fs"
+import { writeFileSync } from "fs"
 // import UuidUtils from "./cocos_uuid.js";
-import { UuidUtils } from './UuidUtil.ts';
+import { UuidUtils } from './UuidUtil';
 
 export interface InvokeGraph {
     setClassName(className: string, newName: string): void

@@ -1,6 +1,6 @@
 import { ClassDeclaration, PropertyDeclaration, MethodDeclaration, Project, SourceFile } from "ts-morph";
-import { existsSync, mkdirSync } from "node:fs";
-import { InvokeGraph } from "./InvokeGraph.ts";
+import { existsSync, mkdirSync } from "fs";
+import { InvokeGraph } from "./InvokeGraph";
 
 export interface CodeVisitor {
     visitFile?(file: SourceFile): boolean

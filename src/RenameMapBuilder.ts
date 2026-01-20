@@ -1,5 +1,5 @@
 import { MethodDeclaration, Project, PropertyDeclaration, SourceFile } from "ts-morph";
-import { RandomSeed } from "./random.ts";
+import { RandomSeed } from "./random";
 
 export enum CodeType {
     Class,
@@ -122,7 +122,7 @@ export class RenameMapBuilder {
                 }
                 renameMaps.set(className, renameMap);
 
-                if (keepMap !== undefined) {
+                if (keepMap !== undefined && keepSet !== undefined) {
                     keepMap.delete(className)
                     keepMap.set(renameMap.getNewClassName(), keepSet)
                 }

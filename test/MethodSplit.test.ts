@@ -217,6 +217,9 @@ test('MethodSplitWithIfReturn', () => {
     project.addSourceFileAtPath(`${splitDir}/SplitMethodSample.ts`)
     const methodSplit = new MethodSplitVisitor2('1234')
     let [sourceFile, cls, method] = getFileMethod(project, "SplitMethodSample", "withIfReturn")!
+    if (!sourceFile) {
+        throw new Error('sourceFile is undefined')
+    }
     methodSplit.visitFile(sourceFile)
     // @ts-ignore
     methodSplit.visitMethodInternal(cls, method, [3, 6])

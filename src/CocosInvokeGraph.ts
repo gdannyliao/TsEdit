@@ -1,8 +1,8 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'fs';
 import { ClassDeclaration, MethodDeclaration, Project } from 'ts-morph';
-import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph.ts';
+import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph';
 // import UuidUtils from './cocos_uuid.js';
-import { UuidUtils } from './UuidUtil.ts';
+import { UuidUtils } from './UuidUtil';
 function isRecord(obj: unknown): obj is Record<string, any> {
     // 函数实现
     return typeof obj === 'object' && obj !== null && !Array.isArray(obj);

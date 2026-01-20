@@ -1,14 +1,14 @@
 import { Project } from "ts-morph"
-import { InvokeGraph } from "./InvokeGraph.ts"
-import { RenameVisitor } from "./TsRename.ts"
-import * as path from "node:path"
-import { RenameMap, RenameMapBuilder } from "./RenameMapBuilder.ts";
-import { CodeScanner } from "./CodeScanner.ts";
-import { CocosInvokeGraph } from "./CocosInvokeGraph.ts";
-import { EmptyInvokeGraph } from "./EmptyInvokeGraph.ts";
+import { InvokeGraph } from "./InvokeGraph"
+import { RenameVisitor } from "./TsRename"
+import * as path from "path"
+import { RenameMap, RenameMapBuilder } from "./RenameMapBuilder";
+import { CodeScanner } from "./CodeScanner";
+import { CocosInvokeGraph } from "./CocosInvokeGraph";
+import { EmptyInvokeGraph } from "./EmptyInvokeGraph";
 // import UuidUtils from "./cocos_uuid.js";
-import { UuidUtils } from './UuidUtil.ts';
-import { MethodSplitVisitor2 } from "./methodSplit/MethodSplit2.ts";
+import { UuidUtils } from './UuidUtil';
+import { MethodSplitVisitor2 } from "./methodSplit/MethodSplit2";
 
 export class TsObfusBuilder {
 

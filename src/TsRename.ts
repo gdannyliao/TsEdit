@@ -1,7 +1,7 @@
 import { MethodDeclaration, PropertyDeclaration, Type, ClassDeclaration } from "ts-morph";
-import { ClassMember, InvokeGraph } from "./InvokeGraph.ts";
-import { CodeVisitor } from "./CodeScanner.ts";
-import { RenameMap } from "./RenameMapBuilder.ts";
+import { ClassMember, InvokeGraph } from "./InvokeGraph";
+import { CodeVisitor } from "./CodeScanner";
+import { RenameMap } from "./RenameMapBuilder";
 
 export class RenameVisitor implements CodeVisitor {
 

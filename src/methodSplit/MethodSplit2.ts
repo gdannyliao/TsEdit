@@ -1,9 +1,9 @@
 import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind, ParameterDeclarationStructure, StructureKind, ReturnStatement, SourceFile, BreakStatement, ContinueStatement, ts } from "ts-morph"
-import { CodeVisitor } from "../CodeScanner.ts";
+import { CodeVisitor } from "../CodeScanner";
 
-import { RandomSeed } from "../random.ts";
-import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByString, hasBlock } from "../ASTTools.ts";
-import { buildScope, JumpStmt, rebuildScope, Scope, Variable } from "./Scopes.ts";
+import { RandomSeed } from "../random";
+import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByString, hasBlock } from "../ASTTools";
+import { buildScope, JumpStmt, rebuildScope, Scope, Variable } from "./Scopes";
 
 export class MethodSplitVisitor2 implements CodeVisitor {
     private random: RandomSeed
@@ -250,7 +250,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             newStmts.splice(insertIdx, 0, `${callNewMethodStmt};`)
         }
 
-        this.currentCls.addMethod({
+        this.currentCls?.addMethod({
             name: newMethodName,
             parameters: newMethodParams,
             statements: newStatements,
@@ -301,7 +301,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         return end
     }
 
-    private ensureSplitPoints(stmts: Statement[], range: [number, number]): { start: number, end: number }[] {
+    private ensureSplitPoints(stmts: Statement[], range: [number, number] | undefined): { start: number, end: number }[] {
         const splitPoints: { start: number, end: number }[] = []
         if (range) {
             let end = range[1]
@@ -365,7 +365,10 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         if (children.size > 0) {
             const keys = Array.from(children.keys())
             for (let i = keys.length - 1; i >= 0; i--) { //较小的作用域排在后面，所以从较小的作用域开始处理
-                this.deepSplit(children.get(keys[i]))
+                const child = children.get(keys[i])
+                if (child !== undefined) {
+                    this.deepSplit(child)
+                }
             }
             //先分割外层的话，子块可能随着分割一起被分割进了新函数，导致子块没有被分割到。
             scope = rebuildScope(scope) //先分割子块，有可能会导致语句起始和终止位置改变，这里重新构建scope以修正
@@ -401,7 +404,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     private getReturnTypeText(): string | string[] {
-        if (this.isAsyncFunc) {
+        if (this.isAsyncFunc && this.isAsyncFunc.innerTypes) {
             const types = this.isAsyncFunc.innerTypes
             if (types.length === 1) {
                 return toTypeText(types[0])
@@ -413,13 +416,15 @@ export class MethodSplitVisitor2 implements CodeVisitor {
     }
 
     visitMethod(cls: ClassDeclaration, method: MethodDeclaration): boolean {
-        if (this.keepMap?.get(cls.getName())?.has(method.getName())) {
+        const className = cls.getName()
+        const methodName = method.getName()
+        if (className !== undefined && methodName !== undefined && this.keepMap?.get(className)?.has(methodName)) {
             return false
         }
         return this.visitMethodInternal(cls, method, undefined)
     }
 
-    private sourceFile: SourceFile
+    private sourceFile: SourceFile | undefined
     visitFile(file: SourceFile): boolean {
         this.sourceFile = file
         return false

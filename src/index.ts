@@ -1,11 +1,11 @@
-import path from "node:path";
+import path from "path";
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { existsSync, readFileSync } from "node:fs";
-import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder.ts";
-import process from "node:process";
-import * as fs from 'node:fs/promises';
-import { RenameMap } from "./RenameMapBuilder.ts";
+import { existsSync, readFileSync } from "fs";
+import { TsObfusBuilder as TsObfuseBuilder } from "./TsObfusBuilder";
+import process from "process";
+import * as fs from 'fs/promises';
+import { RenameMap } from "./RenameMapBuilder";
 
 const version = "2.0.2"
 const args = yargs(hideBin(process.argv)).scriptName(`ts-obfus`)
@@ -43,7 +43,7 @@ function isCocosProject(projectDir: string): boolean {
   if ('engine' in projectJson && projectJson['engine'].includes('cocos')) {
     return true
   }
-  return true
+  return false
 }
 
 async function parseKeepMap(filePath: string): Promise<Map<string, Set<string>>> {
@@ -58,10 +58,14 @@ async function parseKeepMap(filePath: string): Promise<Map<string, Set<string>>>
 
   for (const line of lines) {
     if (line === "--") {
-      result.get(className!)!.add(className); //-- 表示保留类名
+      if (className !== undefined) {
+        result.get(className)!.add(className); //-- 表示保留类名
+      }
     }else if (line.startsWith('-')) {
       const propertyName = line.substring(1); // 去掉 `-`
-      result.get(className!)!.add(propertyName);
+      if (className !== undefined) {
+        result.get(className)!.add(propertyName);
+      }
     } else {
       className = line;
       result.set(className, new Set());
@@ -98,28 +102,30 @@ async function parseNameMap(filePath: string): Promise<Map<string, RenameMap>> {
 }
 
 
-const obfusBuilder = new TsObfuseBuilder().setProjectDir(args.project)
-if (args['keep']) {
-  const file = args['keep']
-  if (!existsSync(file)) {
-    console.error(`文件${file}不存在`)
+(async () => {
+  const obfusBuilder = new TsObfuseBuilder().setProjectDir(args.project)
+  if (args['keep']) {
+    const file = args['keep']
+    if (!existsSync(file)) {
+      console.error(`文件${file}不存在`)
+    }
+    obfusBuilder.setKeepMap(await parseKeepMap(file))
   }
-  obfusBuilder.setKeepMap(await parseKeepMap(file))
-}
 
-if (args['rename']) {
-  obfusBuilder.rename(args['name-map'] ? await parseNameMap(args['name-map']) : undefined, isCocosProject(args.project) ? "cocos" : undefined)
-}
+  if (args['rename']) {
+    obfusBuilder.rename(args['name-map'] ? await parseNameMap(args['name-map']) : undefined, isCocosProject(args.project) ? "cocos" : undefined)
+  }
 
-if (args['split-method']) {
-  obfusBuilder.splitMethod()
-}
+  if (args['split-method']) {
+    obfusBuilder.splitMethod()
+  }
 
-if (args['reset-uuid']) {
-  obfusBuilder.resetUUID()
-}
+  if (args['reset-uuid']) {
+    obfusBuilder.resetUUID()
+  }
 
-const scanner = obfusBuilder.build()
-scanner.scan()
-scanner.saveSync()
-console.log("obfus success")
+  const scanner = obfusBuilder.build()
+  scanner.scan()
+  scanner.saveSync()
+  console.log("obfus success")
+})()
