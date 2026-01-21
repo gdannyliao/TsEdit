@@ -139,9 +139,9 @@ test('MethodSplitWithReturn', () => {
     const cls = sourceFile!.getClass("SplitMethodSample")!
     const method = cls.getMethod("withReturn")!
     const statements = method.getStatements()
-    expect(statements.length).toBe(5)
+    expect(statements.length).toBe(8)
     expect(statements[3].getText()).toBe(`console.log("line4")`)
-    expect(statements[4].getText()).toBe(`return this.z_5WBm4a3nk7()`)
+    expect(statements[5].getText()).toBe(`[w_b_0,r_t_1] = this.z_5WBm4a3nk7();`)
 })
 
 
@@ -235,9 +235,9 @@ test('MethodSplitWithIfReturn', () => {
     method = cls.getMethod("withIfReturn")!
     const statements = method.getStatements()
     expect(statements[3].getText()).toBe("let w_b_0:boolean;")
-    expect(statements[4].getText()).toBe("[w_b_0] = this.z_n6oYp7WOYI(text);")
+    expect(statements[4].getText()).toBe("[w_b_0] = this.z_s19sFadh5Q(text);")
 
-    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
+    const subMethod = cls.getMethod("z_s19sFadh5Q")!.getStatements()
     expect(subMethod[1].getText().includes("return [true]")).toBe(true)
     expect(subMethod[3].getText()).toBe("return [false]")
 })
@@ -261,10 +261,10 @@ test('MethodSplitwithIfReturnHasValue', () => {
     const method = cls.getMethod("withIfReturnHasValue")!
     const statements = method.getStatements()
     expect(statements[3].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
-    expect(statements[4].getText()).toBe("[w_b_0,r_t_1] = this.z_n6oYp7WOYI(text);")
+    expect(statements[4].getText()).toBe("[w_b_0,r_t_1] = this.z_s19sFadh5Q(text);")
 
-    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
-    expect(subMethod[1].getText().includes(`return [true,"return1"]`)).toBe(true)
+    const subMethod = cls.getMethod("z_s19sFadh5Q")!.getStatements()
+    expect(subMethod[1].getText().includes(`return [true,r_t_1]`)).toBe(true)
     expect(subMethod[4].getText()).toBe(`return [false,""]`)
 })
 
@@ -288,10 +288,10 @@ test('withIfReturnAndVarChange', () => {
     const method = cls.getMethod("withIfReturnAndVarChange")!
     const statements = method.getStatements()
     expect(statements[4].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
-    expect(statements[5].getText()).toBe("[w_b_0,var1,r_t_1] = this.z_n6oYp7WOYI(var1,text);")
+    expect(statements[5].getText()).toBe("[w_b_0,var1,r_t_1] = this.z_s19sFadh5Q(var1,text);")
 
-    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
-    expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)
+    const subMethod = cls.getMethod("z_s19sFadh5Q")!.getStatements()
+    expect(subMethod[1].getText().includes(`return [true,var1,r_t_1]`)).toBe(true)
     expect(subMethod[3].getText()).toBe(`return [false,var1,""]`)
 })
 
@@ -315,9 +315,9 @@ test('withAsyncIfReturnAndVarChange', () => {
     const method = cls.getMethod("withAsyncIfReturnAndVarChange")!
     const statements = method.getStatements()
     expect(statements[4].getText()).toBe(`let w_b_0:boolean,r_t_1 = "";`)
-    expect(statements[5].getText()).toBe(`[w_b_0,var1,r_t_1] = await this.z_n6oYp7WOYI(var1,text);`)
+    expect(statements[5].getText()).toBe(`[w_b_0,var1,r_t_1] = this.z_s19sFadh5Q(var1,text);`)
 
-    const subMethod = cls.getMethod("z_n6oYp7WOYI")!.getStatements()
-    expect(subMethod[1].getText().includes(`return [true,var1,"return1"]`)).toBe(true)
+    const subMethod = cls.getMethod("z_s19sFadh5Q")!.getStatements()
+    expect(subMethod[1].getText().includes(`return [true,var1,r_t_1]`)).toBe(true)
     expect(subMethod[3].getText()).toBe(`return [false,var1,""]`)
 })
