@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { TsObfusBuilder } from "../src/TsObfusBuilder";
 
 /**
@@ -248,6 +248,8 @@ test("ScopedResetStillRewritesSceneReferences", () => {
     expect(scene).toContain(spriteFrameUuid)
 })
 
+// ---------- assets 遍历必须是递归的（打包环境才暴露的坑）----------
+
 test("InScopeResetKeepsRawTextureUuidConsistent", () => {
     // subMetas 的 rawTextureUuid 指回父资源：重置父 uuid 时这个反向引用
     // 必须一起改，否则 sprite-frame 找不到贴图。锁住这条一致性的现状。
@@ -256,3 +258,76 @@ test("InScopeResetKeepsRawTextureUuidConsistent", () => {
         path.join(workDir, 'assets/Texture/HelloWorld.png.meta'), 'utf8'))
     expect(meta.subMetas['HelloWorld'].rawTextureUuid).toEqual(meta.uuid)
 })
+
+test("AssetWalkIsRecursiveNotTopLevelOnly", () => {
+    // 这条锁的是一个**只在打包二进制里出现**的 bug：
+    // 原实现用 `readdirSync(dir, {recursive:true})`，而该选项要 Node 18.17+，
+    // pkg 的基线是 node18.5.0 —— 在不支持的 Node 上选项被**静默忽略**，
+    // 只返回顶层条目。后果（captain 实测）：--reset-uuid 只重置 8/156 个 uuid，
+    // 且子目录里的 .prefab/.fire 场景引用完全没被解析（改名后的方法名落不到
+    // prefab 的 handler 上 → 运行时按钮回调全断）。
+    //
+    // 注意：本用例跑在开发机的 Node 上（18.17+），**抓不到 Node 版本问题**——
+    // 它锁的是"遍历要递归"这个意图，防止有人改回只读顶层。
+    // 真正的端到端防线是 py/tools/p1_e2e_check.py（跑打包二进制）。
+    const builder = new TsObfusBuilder().setProjectDir(workDir).setSeed("walk-check")
+    builder.rename(undefined, "cocos")
+    const scanner = builder.build()
+    scanner.scan()
+    scanner.saveSync(freshOutput())
+    builder.saveSceneRefs()
+
+    // build() 已跑过 parse()；改名凭证里的类数应反映"所有 .ts 都被看到"。
+    // 更直接的是比对 uuid 重置覆盖面：全量重置后每个 meta 都应换新。
+    const metaCountBefore = countMetaFiles(path.join(workDir, 'assets'))
+    expect(metaCountBefore).toBeGreaterThan(countTopLevelMetaFiles(path.join(workDir, 'assets')))
+
+    // 用 --reset-uuid 全量重置后，逐个比对：应当**每一个**都变了
+    const p = path.join(os.tmpdir(), `tsedit-walk-${process.pid}-${Date.now()}`)
+    rmSync(p, { recursive: true, force: true })
+    cpSync(srcFixture, p, { recursive: true })
+    try {
+        const before = readAllMetaUuids(path.join(p, 'assets'))
+        const b2 = new TsObfusBuilder().setProjectDir(p).setSeed("walk-check2")
+        b2.rename(undefined, "cocos")
+        b2.resetUUID()
+        const s2 = b2.build()
+        s2.scan()
+        s2.saveSync(path.join(p, 'output'))
+        b2.saveSceneRefs()
+        const after = readAllMetaUuids(path.join(p, 'assets'))
+
+        const unchanged = Object.keys(before).filter(k => after[k] === before[k])
+        expect(unchanged).toEqual([])  // 有任何一个没换 = 遍历漏了子目录
+    } finally {
+        rmSync(p, { recursive: true, force: true })
+    }
+})
+
+function countMetaFiles(dir: string): number {
+    let n = 0
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) n += countMetaFiles(path.join(dir, e.name))
+        else if (e.name.endsWith('.meta')) n++
+    }
+    return n
+}
+
+function countTopLevelMetaFiles(dir: string): number {
+    return readdirSync(dir).filter(f => f.endsWith('.meta')).length
+}
+
+function readAllMetaUuids(dir: string): Record<string, string> {
+    const out: Record<string, string> = {}
+    const walk = (d: string, prefix: string) => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+            const rel = prefix ? `${prefix}/${e.name}` : e.name
+            if (e.isDirectory()) walk(path.join(d, e.name), rel)
+            else if (e.name.endsWith('.meta')) {
+                out[rel] = JSON.parse(readFileSync(path.join(d, e.name), 'utf8')).uuid
+            }
+        }
+    }
+    walk(dir, '')
+    return out
+}

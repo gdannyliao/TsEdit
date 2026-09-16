@@ -463,9 +463,40 @@ export class CocosInvokeGraph implements RenameSink {
         }
     }
 
+    /**
+     * 递归列出 assets/ 下所有文件的**相对路径**。
+     *
+     * **为什么手写而不 `readdirSync(dir, {recursive:true})`**：那个选项要
+     * Node **18.17+**（18.17.0 / 20.1.0 才加），而 pkg 打包的基线是
+     * **node18.5.0**——在不支持的 Node 上该选项被**静默忽略**，只返回顶层条目。
+     *
+     * 后果有多严重（实测，captain 工程）：
+     *   - `assets/` 顶层只有 8 个 .meta，于是 `--reset-uuid` 只重置 **8/156**
+     *     个 uuid，其余 148 个带着源工程的 uuid 出厂；
+     *   - 更糟的是 `.fire`/`.prefab` 只收到顶层那几个 → **子目录里的 prefab
+     *     场景引用根本没被解析**，改名后的方法名不会落到 prefab 的 handler 上，
+     *     运行时按钮回调全断。
+     * 而源码测试跑在开发机的 Node（18.17+）上，所以这个问题**只在打包二进制里出现**，
+     * 单测永远发现不了。
+     *
+     * 手写遍历不依赖 Node 版本，从根本上消除这个版本耦合。
+     */
+    private listAssetFiles(dir: string, prefix: string = ""): string[] {
+        const out: string[] = []
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+            if (entry.isDirectory()) {
+                out.push(...this.listAssetFiles(`${dir}/${entry.name}`, rel))
+            } else {
+                out.push(rel)
+            }
+        }
+        return out
+    }
+
     public parse() {
         const assetsDir = `${this.cocosDir}/assets`
-        const files = readdirSync(assetsDir, { recursive: true }) as string[]
+        const files = this.listAssetFiles(assetsDir)
         const jsonFiles: string[] = []
         files.forEach((file: string) => {
             //先获取所有文件的.meta，方便后续根据UUID识别文件
