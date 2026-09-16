@@ -1,8 +1,95 @@
 import { readdirSync, readFileSync, writeFileSync } from 'fs';
 import { ClassDeclaration, MethodDeclaration, Project } from 'ts-morph';
-import { ClassMember, Invoke, InvokeGraph, Method, Property } from './InvokeGraph';
 // import UuidUtils from './cocos_uuid.js';
 import { UuidUtils } from './UuidUtil';
+import { RenameSink } from './RenameSink';
+
+/**
+ * 符号（某个类的某个方法或属性）在资源文件里的引用点集合
+ */
+export class ClassMember {
+    constructor(private className: string, private memberName: string) { }
+    getClassName(): string {
+        return this.className
+    }
+    setClassName(newName: string) {
+        this.className = newName
+    }
+    getMemberName(): string {
+        return this.memberName
+    }
+
+    setMemberName(newName: string) {
+        this.memberName = newName
+    }
+
+    addInvoke(invoke: Invoke) {
+        this.invokes.push(invoke)
+    }
+
+    getInvokes(): Invoke[] {
+        return this.invokes
+    }
+    private invokes: Invoke[] = []
+}
+
+export class Method extends ClassMember { }
+export class Property extends ClassMember { }
+
+export class Invoke {
+    /**
+     * file, 引用所在的文件。 invokePoint引用点的json，fileContent引用所在的文件的文件内容，方便修改后整体保存
+     */
+    constructor(private file: string, private fileContent: Record<string, any>[], private invokePoint: Record<string, any>) { }
+    private invokeChanged = false
+
+    changeInvokePointProperty(propertyName: string, newName: string) {
+        const value = this.invokePoint[propertyName]
+        delete this.invokePoint[propertyName]
+        this.invokePoint[newName] = value
+        this.invokeChanged = true
+    }
+
+    changeInvokePointMethod(methodName: string, newName: string) {
+        this.invokePoint["handler"] = newName
+        this.invokeChanged = true
+    }
+
+    changeInvokePointShortId(oldShortId: string, newShortId: string) {
+        if (this.invokePoint["_componentId"] === oldShortId) {
+            this.invokePoint["_componentId"] = newShortId
+            this.invokeChanged = true
+        } else if (this.invokePoint["__type__"] === oldShortId) {
+            this.invokePoint["__type__"] = newShortId
+            this.invokeChanged = true
+        } else {
+            const uuid = UuidUtils.decompressUuid(oldShortId)
+            if (this.invokePoint["__uuid__"] === uuid) {
+                this.invokePoint["__uuid__"] = UuidUtils.decompressUuid(newShortId)
+                this.invokeChanged = true
+            } else if (this.invokePoint["rawTextureUuid"] === uuid) {
+                this.invokePoint["rawTextureUuid"] = UuidUtils.decompressUuid(newShortId)
+                this.invokeChanged = true
+            }
+        }
+    }
+
+    save() {
+        if (this.changed()) {
+            this.invokeChanged = false
+            writeFileSync(this.file, JSON.stringify(this.fileContent))
+        }
+    }
+
+    changed(): boolean {
+        return this.invokeChanged
+    }
+
+    getFile(): string {
+        return this.file
+    }
+}
+
 function isRecord(obj: unknown): obj is Record<string, any> {
     // 函数实现
     return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
@@ -58,12 +145,24 @@ class MetaFile {
     }
 }
 
-export class CocosInvokeGraph implements InvokeGraph {
+export class CocosInvokeGraph implements RenameSink {
     /**
      * key: shortId
      * value: MetaFile
      */
     private shortId2file = new Map<string, MetaFile>()
+
+    /**
+     * 重置 uuid 的范围：只重置路径以这些前缀开头的 meta。
+     *
+     * 为什么必须限定范围（而不是"全重置、拉黑几个"）：资源文件里引用的
+     * uuid 有相当一部分**不属于本项目**——captain 实测 54 个被引用 uuid 里
+     * 有 40 个来自引擎内置资源（builtin-2d-sprite.mtl 等），它们没有 meta
+     * 文件、也无从改写。给这些 uuid 改名 = 引用指向不存在的资源 = 运行时黑屏。
+     *
+     * 空集合（默认）= 不限定，保持历史行为（全量重置）。
+     */
+    private uuidScopePrefixes: Array<string> = []
 
 
     private shortIdInvokes = new Map<string, Array<Invoke>>()
@@ -113,8 +212,38 @@ export class CocosInvokeGraph implements InvokeGraph {
         }
     }
 
+    /**
+     * 限定 uuid 重置的范围：只重置 meta 路径以 prefixes 之一开头的那些。
+     *
+     * 传空数组 = 不限定（历史行为）。前缀是相对 assets/ 的路径，例如
+     * `["Piggies/", "Script/"]`。末尾斜杠要带上，否则 "Sweet" 会误配 "SweetX"。
+     */
+    setUuidScope(prefixes: Array<string>): void {
+        this.uuidScopePrefixes = prefixes
+    }
+
+    /**
+     * 可重置 uuid 的 shortId 集合（受 uuidScopePrefixes 限定）。
+     *
+     * 拿不到 meta 文件路径的（引擎内置资源）天然不在 shortId2file 里，本就不会
+     * 被重置；这里再按前缀收一道窄，是为了不误伤**同工程里不属于本包**的资源。
+     */
     getShortIds(): Set<string> {
-        return new Set(this.shortId2file.keys())
+        if (this.uuidScopePrefixes.length === 0) {
+            return new Set(this.shortId2file.keys())
+        }
+        const assetsPrefix = `${this.cocosDir}/assets/`
+        const out = new Set<string>()
+        this.shortId2file.forEach((metaFile, shortId) => {
+            const filePath = metaFile.getFilePath()
+            const rel = filePath.startsWith(assetsPrefix)
+                ? filePath.slice(assetsPrefix.length)
+                : filePath
+            if (this.uuidScopePrefixes.some(p => rel.startsWith(p))) {
+                out.add(shortId)
+            }
+        })
+        return out
     }
 
     setClassName(className: string, newName: string) {
@@ -350,7 +479,6 @@ export class CocosInvokeGraph implements InvokeGraph {
                 this.shortId2file.set(shortUuid, new MetaFile(filePath, shortUuid, meta))
             }
         })
-
         jsonFiles.forEach(file => {
             const json = JSON.parse(readFileSync(file, "utf8"))
             if (Array.isArray(json)) {
@@ -382,18 +510,6 @@ export class CocosInvokeGraph implements InvokeGraph {
     public findMethodInvoke(className: string, methodName: string): Invoke[] | undefined {
         const methodId = `${className}.${methodName}`
         return this.methods.get(methodId)?.getInvokes()
-    }
-
-    findClass(className: string): Map<string, ClassMember> | undefined {
-        return this.classMembers.get(className)
-    }
-
-    findMethod(className: string, methodName: string) {
-        return this.classMembers.get(className)?.get(methodName)
-    }
-
-    findProperty(className: string, propertyName: string): ClassMember | undefined {
-        return this.classMembers.get(className)?.get(propertyName)
     }
 
     saveSync(): void {

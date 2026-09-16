@@ -27,6 +27,24 @@ const args = yargs(hideBin(process.argv)).scriptName(`ts-obfus`)
   .option('reset-uuid', {
     type: 'boolean', description: '是否重置所有类的uuid, 仅在cocos项目中生效', alias: 'ru'
   })
+  .option('uuid-scope', {
+    type: 'string',
+    description: 'uuid 重置范围：相对 assets/ 的路径前缀，逗号分隔（如 "Piggies/,Script/"）。' +
+      '不传 = 全量重置。用于一个工程里存在多份资源、只该给本包换身份的场景',
+    requiresArg: true
+  })
+  .option('seed', {
+    type: 'string',
+    description: '随机种子：决定改名与拆分的随机名。同一 seed 必得同一产物（可复现），' +
+      '不同包给不同 seed 即差异化。不传则回落 projectDir（历史行为）',
+    requiresArg: true
+  })
+  .option('emit-name-map', {
+    type: 'string',
+    description: '把本次改名映射（old→new 全量）写成 JSON。审计凭证：改名是一次性随机的，' +
+      '不落盘则事后无从回答"两个包有没有改到同一个名字"',
+    requiresArg: true
+  })
   .version(version)
   .showVersion("log")
   .parseSync()
@@ -104,6 +122,16 @@ async function parseNameMap(filePath: string): Promise<Map<string, RenameMap>> {
 
 (async () => {
   const obfusBuilder = new TsObfuseBuilder().setProjectDir(args.project)
+
+  if (args['seed']) {
+    obfusBuilder.setSeed(args['seed'])
+    console.log(`[seed] 使用显式种子 ${args['seed']}`)
+  } else if (args['rename'] || args['split-method']) {
+    // 回落 projectDir 是历史行为；但它是"不可复现 + 跨包可能撞车"的来源，
+    // 值得提示一句（存量调用方不受影响，只是多行日志）。
+    console.log(`[seed] 未指定 --seed，回落到 projectDir（产物随目录路径变化，不可复现）`)
+  }
+
   if (args['keep']) {
     const file = args['keep']
     if (!existsSync(file)) {
@@ -120,12 +148,27 @@ async function parseNameMap(filePath: string): Promise<Map<string, RenameMap>> {
     obfusBuilder.splitMethod()
   }
 
-  if (args['reset-uuid']) {
+  if (args['uuid-scope']) {
+    if (!args['reset-uuid']) {
+      console.error('--uuid-scope 需要与 --reset-uuid 同时使用（单独给范围不会重置任何 uuid）')
+    }
+    const prefixes = String(args['uuid-scope'])
+      .split(',').map(s => s.trim()).filter(s => s.length > 0)
+      .map(s => s.endsWith('/') ? s : `${s}/`)
+    obfusBuilder.resetUUIDInScope(prefixes)
+  } else if (args['reset-uuid']) {
     obfusBuilder.resetUUID()
   }
 
   const scanner = obfusBuilder.build()
   scanner.scan()
   scanner.saveSync()
+  obfusBuilder.saveSceneRefs()
+
+  if (args['emit-name-map']) {
+    obfusBuilder.writeNameMap(String(args['emit-name-map']))
+    console.log(`[name-map] 改名凭证已写入 ${args['emit-name-map']}`)
+  }
+
   console.log("obfus success")
 })()

@@ -1,3 +1,5 @@
+import { makeThing } from "./ImportedThing"
+
 class SplitMethodSample {
 
 
@@ -365,5 +367,52 @@ return "return2"
         console.log("line6")
         console.log("line7")
         console.log("line8")
+    }
+
+    withArrayReturn(flag: boolean): string[] {
+        const a: string[] = ["x"]
+        console.log("line1")
+        console.log("line2")
+        if (flag) {
+            return a
+        }
+        console.log("line3")
+        console.log("line4")
+        return ["y"]
+    }
+
+    withUnionReturn(flag: boolean): string | number {
+        console.log("line1")
+        console.log("line2")
+        if (flag) {
+            return "s"
+        }
+        console.log("line3")
+        console.log("line4")
+        return 1
+    }
+
+    withImportedType(flag: boolean): number {
+        const thing = makeThing()
+        console.log("line1")
+        console.log("line2")
+        if (flag) {
+            return thing.value
+        }
+        console.log("line3")
+        console.log("line4")
+        return 0
+    }
+
+    withSpilledArray(flag: boolean): number {
+        console.log("line1")
+        console.log("line2")
+        if (flag) {
+            return 0
+        }
+        const arr: string[] = []
+        console.log("line3")
+        console.log("line4")
+        return arr.length
     }
 }

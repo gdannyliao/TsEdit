@@ -1,6 +1,5 @@
 import { ClassDeclaration, PropertyDeclaration, MethodDeclaration, Project, SourceFile } from "ts-morph";
 import { existsSync, mkdirSync } from "fs";
-import { InvokeGraph } from "./InvokeGraph";
 
 export interface CodeVisitor {
     visitFile?(file: SourceFile): boolean
@@ -12,16 +11,11 @@ export interface CodeVisitor {
 export class CodeScanner {
     private visitors: CodeVisitor[] = []
     private changedFiles = new Set<SourceFile>()
-    private invokeGraph: InvokeGraph | undefined
     constructor(private proj: Project) {
     }
 
     addVisitor(visitor: CodeVisitor) {
         this.visitors.push(visitor)
-    }
-
-    addInvokeGraph(invokeGraph: InvokeGraph) {
-        this.invokeGraph = invokeGraph
     }
 
     scan() {
@@ -78,6 +72,5 @@ export class CodeScanner {
             }
             file.saveSync()
         }
-        this.invokeGraph?.saveSync()
     }
 }

@@ -45,6 +45,16 @@ export class RenameMap {
     getNewClassName() {
         return this.newClassName
     }
+
+    /** 属性改名全量（old → new）。审计凭证用：逐条列举，不靠 getter 逐个问。 */
+    getPropertyEntries(): Array<[string, string]> {
+        return Array.from(this.propertyMap.entries())
+    }
+
+    /** 方法改名全量（old → new）。理由同 getPropertyEntries。 */
+    getMethodEntries(): Array<[string, string]> {
+        return Array.from(this.methodMap.entries())
+    }
 }
 
 export class RenameMapBuilder {

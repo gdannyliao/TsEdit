@@ -2,8 +2,9 @@ import { Node, ClassDeclaration, MethodDeclaration, Type, Statement, SyntaxKind,
 import { CodeVisitor } from "../CodeScanner";
 
 import { RandomSeed } from "../random";
-import { isPromiseType, isStaticFunc, toTypeText, getDefaultValueByString, hasBlock } from "../ASTTools";
+import { isPromiseType, isStaticFunc, hasBlock } from "../ASTTools";
 import { buildScope, JumpStmt, rebuildScope, Scope, Variable } from "./Scopes";
+import { placeholderFor, renderTypeName } from "./TypeCodegen";
 
 export class MethodSplitVisitor2 implements CodeVisitor {
     private random: RandomSeed
@@ -58,7 +59,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
      * @param spilledVars  切分出来的方法中，作用域外溢的变量
      * @returns receiveVars: 调用新方法后接收变量的列表。lastReturns: 新方法最后一句返回语句中的变量列表。returnTypes: 新方法的返回类型列表。ifBreakLine: 如果有ifBreakLine，返回语句中的变量列表。newDeclareVars: 原方法需要额外声明的变量。willBreakVarName: 是否有中间返回
      */
-    private prepareCodes(jumpStmts: Array<JumpStmt>, changedVars: Set<Variable>, spilledVars: Set<Variable>): { receiveVars: string[], lastReturns: string[], returnTypes: string[], ifBreakLine: string[], newDeclareVars: string[], willBreakVars: { name: string, type: number }[], midReturns: Variable[] } {
+    private prepareCodes(at: Node, jumpStmts: Array<JumpStmt>, changedVars: Set<Variable>, spilledVars: Set<Variable>): { receiveVars: string[], lastReturns: string[], returnTypes: string[], ifBreakLine: string[], newDeclareVars: string[], willBreakVars: { name: string, type: number }[], midReturns: Variable[] } {
         const lastReturns: string[] = []
         const midReturns: Variable[] = []
         const returnTypes: string[] = []
@@ -89,53 +90,46 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             receiveVars.push(v.getName())
             lastReturns.push(v.getName())
             midReturns.push(v)
-            returnTypes.push((v.getType()))
+            returnTypes.push(renderTypeName(v.getType(), at))
         })
 
         spilledVars.forEach(v => {
             receiveVars.push(v.getName())
             lastReturns.push(v.getName())
             midReturns.push(v)
-            returnTypes.push((v.getType()))
-            newDeclareVars.push(`${v.getName()}:${v.getType()}`)
+            returnTypes.push(renderTypeName(v.getType(), at))
+            newDeclareVars.push(`${v.getName()}:${renderTypeName(v.getType(), at)}`)
         })
 
         if (originReturns.length > 0) {
             //有非空中间返回又有原始返回时，才需要用r_t_传递原始返回值
 
-            const addReturnType = (returnType: string) => {
-                if (returnType === "void") {
+            const addReturnType = (returnType: Type) => {
+                if (returnType.isVoid()) {
                     return
                 }
                 const rtName = `r_t_${this.getTempVarIdx()}`
-                const defaultValue = getDefaultValueByString(returnType)
-                lastReturns.push(defaultValue)
+                const placeholder = placeholderFor(returnType, at)
+                lastReturns.push(placeholder)
                 receiveVars.push(rtName)
-                returnTypes.push(returnType)
-                newDeclareVars.push(`${rtName} = ${defaultValue}`)
+                returnTypes.push(renderTypeName(returnType, at))
+                newDeclareVars.push(`${rtName} = ${placeholder}`)
                 ifBreakLine.push(rtName)
             }
-            const returnType = this.getReturnTypeText()
-            if (returnType instanceof Array) {
-                for (let i = 0; i < returnType.length; i++) {
-                    addReturnType(returnType[i])
-                }
-            } else {
-                addReturnType(returnType)
-            }
+            this.getReturnTypes().forEach(addReturnType)
         }
 
         return { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars, midReturns }
     }
 
-    private gatherParams(invokedVars: Set<Variable>): { newMethodParams: ParameterDeclarationStructure[], newMtdCallParams: string[] } {
+    private gatherParams(at: Node, invokedVars: Set<Variable>): { newMethodParams: ParameterDeclarationStructure[], newMtdCallParams: string[] } {
         const newMethodParams: ParameterDeclarationStructure[] = []
         const newMtdCallParams: string[] = []
         for (const v of invokedVars) {
             newMethodParams.push({
                 kind: StructureKind.Parameter,
                 name: v.getName(),
-                type: v.getType(),
+                type: renderTypeName(v.getType(), at),
             })
             newMtdCallParams.push(v.getName())
         }
@@ -147,7 +141,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         if (vars.length === 0) return ""
         return `let ${vars.join(',')};`
     }
-    private replaceMidReturnStmts(splitStmts: Statement[], jumpStmts: Array<JumpStmt>,
+    private replaceMidReturnStmts(at: Node, splitStmts: Statement[], jumpStmts: Array<JumpStmt>,
         midReturns: Variable[], willBreakVars: { name: string, type: number }[]): boolean {
 
         let lastStmtIsJumpStmt = false
@@ -178,7 +172,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
                 if (v.getStartLine() <= jmp.getStartLineNumber()) {
                     newReturnValues.push(v.getName())
                 } else {
-                    newReturnValues.push(getDefaultValueByString(v.getType()))
+                    newReturnValues.push(placeholderFor(v.getType(), at))
                 }
             }
 
@@ -210,16 +204,16 @@ export class MethodSplitVisitor2 implements CodeVisitor {
      * @param scope 
      * @returns 
      */
-    private insertNewMethod(newStmts: (Statement | string)[], splitStmts: Statement[],
+    private insertNewMethod(at: Node, newStmts: (Statement | string)[], splitStmts: Statement[],
         scope: Scope, insertIdx: number) {
 
         const newMethodName = `z_${this.random.getString(10)}`
         const { invokedVars, spilledVars, changedVars, jumpStmts } = scope.collectDataIn(splitStmts[0].getStartLineNumber(), splitStmts[splitStmts.length - 1].getEndLineNumber())
 
-        const { newMethodParams, newMtdCallParams } = this.gatherParams(invokedVars)
-        const { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars, midReturns } = this.prepareCodes(jumpStmts, changedVars, spilledVars)
+        const { newMethodParams, newMtdCallParams } = this.gatherParams(at, invokedVars)
+        const { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars, midReturns } = this.prepareCodes(at, jumpStmts, changedVars, spilledVars)
 
-        const lastStmtIsJumpStmt = this.replaceMidReturnStmts(splitStmts, jumpStmts, midReturns, willBreakVars)
+        const lastStmtIsJumpStmt = this.replaceMidReturnStmts(at, splitStmts, jumpStmts, midReturns, willBreakVars)
 
         const newStatements = splitStmts.map(stmt => stmt instanceof Statement ? stmt.getText() : stmt)
         const callNewMethodStmt = `this.${newMethodName}(${newMtdCallParams.join(',')})`
@@ -232,9 +226,11 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             returnType = `[${returnTypes.join(',')}]`
 
             let receiveReturnVarLine = `${this.toDeclareLine(newDeclareVars)}[${receiveVars.join(',')}] = ${callNewMethodStmt};`
+            let hasReturnJump = false
             for (const v of willBreakVars) {
                 switch (v.type) {
                     case SyntaxKind.ReturnStatement:
+                        hasReturnJump = true
                         receiveReturnVarLine += `if (${v.name}) {return ${ifBreakLine.join(',')}};`
                         break
                     case SyntaxKind.BreakStatement:
@@ -244,6 +240,12 @@ export class MethodSplitVisitor2 implements CodeVisitor {
                         receiveReturnVarLine += `if (${v.name}) {continue};`
                         break
                 }
+            }
+            if (lastStmtIsJumpStmt && hasReturnJump) {
+                // 被切出去的末句是原方法的 return，所以子方法每条路径都会把 w_b_ 置真、上面那个 if 必然成立，
+                // 原方法末尾在运行时到不了。类型检查器看不出这一点（strict 下报 TS2366），补一句 throw 让它
+                // 语法上也到不了；万一上面的推断有误，也会立刻炸出来，而不是静默返回一个占位值。
+                receiveReturnVarLine += `throw new Error("tsedit: unreachable after split ${newMethodName}");`
             }
             newStmts.splice(insertIdx, 0, receiveReturnVarLine)
         } else {
@@ -340,7 +342,7 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         block.addStatements(newStrStmts)
     }
 
-    private split(scope: Scope, range: ([number, number] | undefined) = undefined) {
+    private split(at: Node, scope: Scope, range: ([number, number] | undefined) = undefined) {
         const stmts: Statement[] = scope.getBlock()!.getStatements()
         if (stmts.length < 2 && !hasBlock(stmts[0])) { //如果只有一个语句，且不是块语句，则不需要分割
             return
@@ -355,29 +357,29 @@ export class MethodSplitVisitor2 implements CodeVisitor {
             //由于从后往前分割，所以splitStmt可以直接视为Statement[]，因为插入的string statement都在后面
             const splitStmts: Statement[] = newStmts.splice(start, end - start) as Statement[]
 
-            this.insertNewMethod(newStmts, splitStmts, scope, start)
+            this.insertNewMethod(at, newStmts, splitStmts, scope, start)
         }
         this.replaceOldMethod(scope, newStmts)
     }
 
-    private deepSplit(scope: Scope, range: ([number, number] | undefined) = undefined) {
+    private deepSplit(at: Node, scope: Scope, range: ([number, number] | undefined) = undefined) {
         const children = scope.getChildren()
         if (children.size > 0) {
             const keys = Array.from(children.keys())
             for (let i = keys.length - 1; i >= 0; i--) { //较小的作用域排在后面，所以从较小的作用域开始处理
                 const child = children.get(keys[i])
                 if (child !== undefined) {
-                    this.deepSplit(child)
+                    this.deepSplit(at, child)
                 }
             }
             //先分割外层的话，子块可能随着分割一起被分割进了新函数，导致子块没有被分割到。
             scope = rebuildScope(scope) //先分割子块，有可能会导致语句起始和终止位置改变，这里重新构建scope以修正
         }
-        this.split(scope, range)
+        this.split(at, scope, range)
     }
 
-    private splitMethod(method: MethodDeclaration, range: [number, number] | undefined): boolean {
-        this.deepSplit(buildScope(SyntaxKind.MethodDeclaration, method), range)
+    private splitMethod(at: Node, method: MethodDeclaration, range: [number, number] | undefined): boolean {
+        this.deepSplit(at, buildScope(SyntaxKind.MethodDeclaration, method), range)
         return true
     }
     private visitMethodInternal(cls: ClassDeclaration, method: MethodDeclaration, range: [number, number] | undefined): boolean {
@@ -400,19 +402,14 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         if (this.isAsyncFunc === undefined) {
             this.returnType = method.getReturnType()
         }
-        return this.splitMethod(method, range)
+        return this.splitMethod(cls, method, range)
     }
 
-    private getReturnTypeText(): string | string[] {
+    private getReturnTypes(): Type[] {
         if (this.isAsyncFunc && this.isAsyncFunc.innerTypes) {
-            const types = this.isAsyncFunc.innerTypes
-            if (types.length === 1) {
-                return toTypeText(types[0])
-            } else {
-                return types.map(t => toTypeText(t))
-            }
+            return this.isAsyncFunc.innerTypes
         }
-        return toTypeText(this.returnType)
+        return this.returnType === undefined ? [] : [this.returnType]
     }
 
     visitMethod(cls: ClassDeclaration, method: MethodDeclaration): boolean {

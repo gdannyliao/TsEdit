@@ -1,7 +1,7 @@
 import { MethodDeclaration, PropertyDeclaration, Type, ClassDeclaration } from "ts-morph";
-import { ClassMember, InvokeGraph } from "./InvokeGraph";
 import { CodeVisitor } from "./CodeScanner";
 import { RenameMap } from "./RenameMapBuilder";
+import { RenameSink } from "./RenameSink";
 
 export class RenameVisitor implements CodeVisitor {
 
@@ -9,7 +9,7 @@ export class RenameVisitor implements CodeVisitor {
     private renameMap = new Map<string, RenameMap>()
 
     constructor(
-        private invokeGraph: InvokeGraph,
+        private sink: RenameSink,
     ) {
     }
 
@@ -38,7 +38,7 @@ export class RenameVisitor implements CodeVisitor {
         cls.rename(newClassName)
         this.renameMap.set(newClassName, classMap)
         this.renameMap.delete(className)
-        this.invokeGraph.setClassName(className, newClassName)
+        this.sink.setClassName(className, newClassName)
         return true
     }
 
@@ -80,7 +80,7 @@ export class RenameVisitor implements CodeVisitor {
         //FIXME 如果重命名的是一个子类的函数，但父类这个函数是保留的，子类的函数也应该保留。（目前没有处理这个情况）
         console.log("rename method", className, methodName, newMethodName)
         method.rename(newMethodName)
-        this.invokeGraph.setMethodName(className, methodName, newMethodName)
+        this.sink.setMethodName(className, methodName, newMethodName)
         return true
 
     }
@@ -104,19 +104,8 @@ export class RenameVisitor implements CodeVisitor {
         }
         console.log("rename property", className, propertyName, newPropertyName)
         property.rename(newPropertyName)
-        this.invokeGraph.setPropertyName(className, propertyName, newPropertyName)
+        this.sink.setPropertyName(className, propertyName, newPropertyName)
         return true
     }
 
-    getClass(className: string): Map<string, ClassMember> | undefined {
-        return this.invokeGraph.findClass(className)
-    }
-
-    getMethod(className: string, methodName: string): ClassMember | undefined {
-        return this.invokeGraph.findMethod(className, methodName)
-    }
-
-    getProperty(className: string, propertyName: string): ClassMember | undefined {
-        return this.invokeGraph.findProperty(className, propertyName)
-    }
 }

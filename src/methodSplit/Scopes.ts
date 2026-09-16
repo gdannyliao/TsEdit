@@ -1,9 +1,9 @@
 
-import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
-import { isAssignmentStatement, toTypeText, isUnaryExpression } from '../ASTTools';
+import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, Type, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
+import { isAssignmentStatement, isUnaryExpression } from '../ASTTools';
 
 export class Variable {
-    constructor(private name: string, private type: string, private startLine: number, private endLine: number) {
+    constructor(private name: string, private type: Type, private startLine: number, private endLine: number) {
     }
 
     getName() {
@@ -423,16 +423,16 @@ function toVariable(decl: VariableDeclaration, endLine: number): Variable[] {
     const nameNode = decl.getNameNode()
     if (nameNode instanceof ObjectBindingPattern) {
         nameNode.getElements().forEach(elem => {
-            vars.push(new Variable(elem.getName(), toTypeText(elem.getType()), decl.getStartLineNumber(), endLine))
+            vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine))
         })
     } else if (nameNode instanceof ArrayBindingPattern) {
         nameNode.getElements().forEach(elem => {
             if (elem instanceof BindingElement) {
-                vars.push(new Variable(elem.getName(), toTypeText(elem.getType()), decl.getStartLineNumber(), endLine))
+                vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine))
             }
         })
     } else {
-        vars.push(new Variable(decl.getName(), toTypeText(decl.getType()), decl.getStartLineNumber(), endLine))
+        vars.push(new Variable(decl.getName(), decl.getType(), decl.getStartLineNumber(), endLine))
     }
     return vars
 }
@@ -612,7 +612,7 @@ export function buildScope(kind: SyntaxKind, stmtNode: StatementedNode): Scope {
     const params: Variable[] = []
     if (stmtNode instanceof MethodDeclaration) {
         stmtNode.getParameters().forEach(param => {
-            params.push(new Variable(param.getName(), toTypeText(param.getType()), stmtNode.getStartLineNumber(), stmtNode.getEndLineNumber()))
+            params.push(new Variable(param.getName(), param.getType(), stmtNode.getStartLineNumber(), stmtNode.getEndLineNumber()))
         })
     }
     return scanInternal(kind, stmtNode, undefined, params);

@@ -1,58 +1,6 @@
 import { Statement, Block as TsBlock, SyntaxKind, Type, IterationStatement, WithStatement, BinaryExpression, MethodDeclaration, FunctionDeclaration, ExpressionStatement, PostfixUnaryExpression, PrefixUnaryExpression } from 'ts-morph';
 
 
-export function getDefaultValueByString(type: string | undefined): string {
-    if (type === undefined) {
-        return "undefined"
-    }
-    if (type === "void") {
-        return "undefined"
-    }
-    if (type === "number") {
-        return "0"
-    }
-    if (type === "string") {
-        return "\"\""
-    }
-    if (type === "boolean") {
-        return "false"
-    }
-    if (type === "any") {
-        return "undefined"
-    }
-    if (type === "object") {
-        return "undefined"
-    }
-    if (type === "array") {
-        return "[]"
-    }
-    return "undefined"
-}
-export function getDefaultValueByType(type: Type | undefined): string {
-    if (type === undefined) {
-        return "undefined"
-    }
-    if (type.isVoid()) {
-        return "undefined"
-    }
-    if (type.isNumber()) {
-        return "0"
-    }
-    if (type.isString()) {
-        return "\"\""
-    }
-    if (type.isBoolean()) {
-        return "false"
-    }
-    if (type.isArray()) {
-        return "[]"
-    }
-    if (type.isObject()) {
-        return "undefined"
-    }
-    return "undefined"
-}
-
 export function isPromiseType(type: Type | undefined): {
     yes: boolean;
     innerTypes?: Type[];
@@ -104,54 +52,6 @@ export function isStaticFunc(method: MethodDeclaration | FunctionDeclaration | u
     );
 
     return hasStaticModifier;
-}
-
-function removeImportType(typeText: string): string {
-    if (typeText.startsWith("import(")) {
-        // Handle default exports: import(".../SlotMachineModel").default
-        if (typeText.endsWith(").default")) {
-            const match = typeText.match(/import\("(.+)"\)\.default/);
-            if (match && match[1]) {
-                const path = match[1];
-                const parts = path.split("/");
-                const fileName = parts[parts.length - 1];
-                // Remove extension if present (though usually import paths don't have extensions in TS)
-                return fileName.split(".")[0];
-            }
-        }
-
-        // Handle named exports: import("...").WinResult
-        const type = typeText.split(".").pop()
-        if (type !== undefined && type !== "default") {
-            return type
-        }
-        return "any"
-    }
-    return typeText
-}
-function toTypeTextInner(type: Type | undefined): string {
-    if (type === undefined) {
-        return "void"
-    }
-    if (type.isLiteral()) {
-        return removeImportType(type.getBaseTypeOfLiteralType().getText())
-    }
-    return removeImportType(type.getText())
-}
-export function toTypeText(type: Type | undefined): string {
-    if (type === undefined) {
-        return "void"
-    }
-
-    if (type.isArray()) {
-        const typeArgs = type.getTypeArguments();
-        if (typeArgs.length > 0) {
-            return `Array<${toTypeTextInner(typeArgs[0])}>`
-        }
-        return "Array"
-    }
-
-    return toTypeTextInner(type)
 }
 
 export function isAssignmentStatement(statement: Statement): BinaryExpression | undefined {
