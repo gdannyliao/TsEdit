@@ -1,9 +1,11 @@
 
-import { ArrayBindingPattern, BinaryExpression, BindingElement, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, Type, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
+import { ArrayBindingPattern, BinaryExpression, BindingElement, Block, BreakStatement, ContinueStatement, ExpressionStatement, Identifier, IterationStatement, MethodDeclaration, ObjectBindingPattern, PostfixUnaryExpression, PrefixUnaryExpression, ReturnStatement, Statement, StatementedNode, SyntaxKind, Type, VariableDeclaration, VariableDeclarationList } from 'ts-morph';
 import { isAssignmentStatement, isUnaryExpression } from '../ASTTools';
 
 export class Variable {
-    constructor(private name: string, private type: Type, private startLine: number, private endLine: number) {
+    constructor(private name: string, private type: Type, private startLine: number, private endLine: number,
+        /** 声明在源码中的起点。行号无法区分“循环头”与“同一行的循环体”，位置可以。 */
+        private startPos: number = -1) {
     }
 
     getName() {
@@ -20,6 +22,10 @@ export class Variable {
 
     getStartLine() {
         return this.startLine
+    }
+
+    getStartPos() {
+        return this.startPos
     }
 
     getEndLine() {
@@ -244,7 +250,18 @@ export class Scope {
     }
 
     addVariable(variable: Variable) {
+        const old = this.vars.get(variable.getName())
         this.vars.set(variable.getName(), variable)
+        if (old !== undefined && old !== variable && this.invokedVars.has(old)) {
+            // rebuildScope 会把旧变量当参数传进来，随后重新扫描时又为同一声明
+            // 创建了一个新 Variable。若不移交引用记录，invokedVars 会一直指向
+            // 旧对象，与新 vars 里的对象“同名但不同身份”，导致它既被当成
+            // 已注入参数、又被当成新方法内的局部声明（Duplicate identifier）。
+            const lines = this.invokedVars.get(old)!
+            this.invokedVars.delete(old)
+            const existing = this.invokedVars.get(variable)
+            this.invokedVars.set(variable, existing === undefined ? lines : existing.concat(lines))
+        }
     }
 
     addVariables(variables: Variable[]) {
@@ -297,7 +314,7 @@ export class Scope {
         return this.block
     }
 
-    collectDataIn(startLine: number, endLine: number): {
+    collectDataIn(startLine: number, endLine: number, startPos: number = -1, endPos: number = -1): {
         invokedVars: Set<Variable>, spilledVars: Set<Variable>, changedVars: Set<Variable>
         , jumpStmts: Array<JumpStmt>
     } {
@@ -308,6 +325,16 @@ export class Scope {
         const newVarsInRange = new Set<Variable>()
 
         this.vars.forEach(v => {
+            // 行号无法区分“循环头里的绑定”和“同一行的循环体”：单行
+            // `for (const x of xs) { use(x) }` 中 x 与循环体同处一行，
+            // 旧的按行比较会把 x 当成“在拆分范围内新声明的变量”，从而
+            // 既不传参也不返回，产出 `Cannot find name 'x'`。
+            // 声明位置不在拆分范围内的，一定是外部变量（循环头、外层 let、
+            // 方法参数），或在本次拆分之后才声明；都不能算进新方法自己的变量。
+            if (startPos >= 0 && endPos >= 0 && v.getStartPos() >= 0 &&
+                (v.getStartPos() < startPos || v.getStartPos() > endPos)) {
+                return
+            }
             switch (compare(v.getStartLine(), v.getEndLine(), startLine, endLine)) {
                 case 0:
                 case -1:
@@ -423,16 +450,16 @@ function toVariable(decl: VariableDeclaration, endLine: number): Variable[] {
     const nameNode = decl.getNameNode()
     if (nameNode instanceof ObjectBindingPattern) {
         nameNode.getElements().forEach(elem => {
-            vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine))
+            vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine, decl.getStart()))
         })
     } else if (nameNode instanceof ArrayBindingPattern) {
         nameNode.getElements().forEach(elem => {
             if (elem instanceof BindingElement) {
-                vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine))
+                vars.push(new Variable(elem.getName(), elem.getType(), decl.getStartLineNumber(), endLine, decl.getStart()))
             }
         })
     } else {
-        vars.push(new Variable(decl.getName(), decl.getType(), decl.getStartLineNumber(), endLine))
+        vars.push(new Variable(decl.getName(), decl.getType(), decl.getStartLineNumber(), endLine, decl.getStart()))
     }
     return vars
 }
@@ -442,6 +469,21 @@ function toVariables(decls: VariableDeclarationList, endLine: number): Variable[
         vars.push(...toVariable(decl, endLine))
     }
     return vars
+}
+
+/**
+ * 循环体/with 体可能是单条语句而不是 Block（`for (...) touch(x);`）。
+ *
+ * 原来的调用点用 `asKind(SyntaxKind.Block)!` 把 undefined 掩盖成 Block，
+ * 随后 `Scope` 构造时 `block.getStatements()` 直接崩溃。这里把非 Block
+ * 的体包成 Block，只增加一对花括号、不改变行数，后续的作用域分析与拆分
+ * 就能继续面对真正的 Block。
+ */
+function ensureBlock(stmt: Statement): Block {
+    if (stmt instanceof Block) {
+        return stmt
+    }
+    return stmt.replaceWithText(`{ ${stmt.getText()} }`).asKindOrThrow(SyntaxKind.Block)
 }
 function checkStmt(stmt: Statement, parentScope: Scope) {
     switch (stmt.getKind()) {
@@ -498,7 +540,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forOfStmt.getEndLineNumber())
             }
-            scanInternal(SyntaxKind.ForOfStatement, forOfStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
+            scanInternal(SyntaxKind.ForOfStatement, ensureBlock(forOfStmt.getStatement()), parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.ForStatement: {
@@ -508,8 +550,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forStmt.getEndLineNumber())
             }
-            //FIXME forStmt.getStatement() 单行时有可能不是BlockStatement而是ExpressionStatement
-            scanInternal(SyntaxKind.ForStatement, forStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
+            scanInternal(SyntaxKind.ForStatement, ensureBlock(forStmt.getStatement()), parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.ForInStatement: {
@@ -519,14 +560,14 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
             if (initStmt instanceof VariableDeclarationList) {
                 variables = toVariables(initStmt, forInStmt.getEndLineNumber())
             }
-            scanInternal(SyntaxKind.ForInStatement, forInStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, variables, stmt.getStartLineNumber());
+            scanInternal(SyntaxKind.ForInStatement, ensureBlock(forInStmt.getStatement()), parentScope, variables, stmt.getStartLineNumber());
             break
         }
         case SyntaxKind.WhileStatement:
         case SyntaxKind.DoStatement: {
             // 这些都继承自IterationStatement，有统一的getStatement方法
             const iterStmt = stmt as IterationStatement;
-            scanInternal(stmt.getKind(), iterStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, undefined, stmt.getStartLineNumber());
+            scanInternal(stmt.getKind(), ensureBlock(iterStmt.getStatement()), parentScope, undefined, stmt.getStartLineNumber());
             break;
         }
         case SyntaxKind.TryStatement: {
@@ -571,7 +612,7 @@ function checkStmt(stmt: Statement, parentScope: Scope) {
         // With语句（虽然在严格模式下不推荐使用）
         case SyntaxKind.WithStatement: {
             const withStmt = stmt.asKind(SyntaxKind.WithStatement)!;
-            scanInternal(SyntaxKind.WithStatement, withStmt.getStatement().asKind(SyntaxKind.Block)!, parentScope, undefined, stmt.getStartLineNumber());
+            scanInternal(SyntaxKind.WithStatement, ensureBlock(withStmt.getStatement()), parentScope, undefined, stmt.getStartLineNumber());
             break;
         }
     }
@@ -612,7 +653,7 @@ export function buildScope(kind: SyntaxKind, stmtNode: StatementedNode): Scope {
     const params: Variable[] = []
     if (stmtNode instanceof MethodDeclaration) {
         stmtNode.getParameters().forEach(param => {
-            params.push(new Variable(param.getName(), param.getType(), stmtNode.getStartLineNumber(), stmtNode.getEndLineNumber()))
+            params.push(new Variable(param.getName(), param.getType(), stmtNode.getStartLineNumber(), stmtNode.getEndLineNumber(), param.getStart()))
         })
     }
     return scanInternal(kind, stmtNode, undefined, params);

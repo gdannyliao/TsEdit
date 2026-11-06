@@ -208,7 +208,13 @@ export class MethodSplitVisitor2 implements CodeVisitor {
         scope: Scope, insertIdx: number) {
 
         const newMethodName = `z_${this.random.getString(10)}`
-        const { invokedVars, spilledVars, changedVars, jumpStmts } = scope.collectDataIn(splitStmts[0].getStartLineNumber(), splitStmts[splitStmts.length - 1].getEndLineNumber())
+        const firstSplitStmt = splitStmts[0]
+        const lastSplitStmt = splitStmts[splitStmts.length - 1]
+        const { invokedVars, spilledVars, changedVars, jumpStmts } = scope.collectDataIn(
+            firstSplitStmt.getStartLineNumber(), lastSplitStmt.getEndLineNumber(),
+            // 同一行里也可能有“循环头声明”与“循环体语句”，只靠行号会把循环变量
+            // 误判成拆分范围内新声明的变量。位置用于区分两者。
+            firstSplitStmt.getStart(), lastSplitStmt.getEnd())
 
         const { newMethodParams, newMtdCallParams } = this.gatherParams(at, invokedVars)
         const { receiveVars, lastReturns, returnTypes, ifBreakLine, newDeclareVars, willBreakVars, midReturns } = this.prepareCodes(at, jumpStmts, changedVars, spilledVars)
